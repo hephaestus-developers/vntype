@@ -1,0 +1,78 @@
+{
+  "aliases": {
+    "google-chrome": "chrome",
+    "google-chrome-stable": "chrome",
+    "chromium": "chrome",
+    "chromium-browser": "chrome",
+    "microsoft-edge": "edge",
+    "msedge": "edge",
+    "firefox-esr": "firefox",
+    "code": "vscode",
+    "code-oss": "vscode",
+    "vscodium": "vscode",
+    "cursor": "vscode",
+    "gnome-terminal-server": "terminal",
+    "gnome-terminal": "terminal",
+    "konsole": "terminal",
+    "xfce4-terminal": "terminal",
+    "org.wezfurlong.wezterm": "wezterm",
+    "wezterm-gui": "wezterm",
+    "io.alacritty": "alacritty",
+    "net.kovidgoyal.kitty": "kitty"
+  },
+  "profiles": {
+    "chrome": {
+      "output_mode": "preedit",
+      "backspace_delay_ms": 1,
+      "delay_per_char_ms": 0,
+      "wait_ack": false
+    },
+    "edge": {
+      "output_mode": "preedit",
+      "backspace_delay_ms": 1,
+      "delay_per_char_ms": 0,
+      "wait_ack": false
+    },
+    "firefox": {
+      "output_mode": "preedit",
+      "backspace_delay_ms": 1,
+      "delay_per_char_ms": 0,
+      "wait_ack": false
+    },
+    "vscode": {
+      "output_mode": "preedit",
+      "backspace_delay_ms": 2,
+      "delay_per_char_ms": 1,
+      "wait_ack": false,
+      "edit_previous_word": false
+    },
+    "terminal": {
+      "output_mode": "replace",
+      "backspace_delay_ms": 2,
+      "delay_per_char_ms": 1,
+      "wait_ack": true,
+      "edit_previous_word": false
+    },
+    "alacritty": {
+      "output_mode": "replace",
+      "backspace_delay_ms": 1,
+      "delay_per_char_ms": 1,
+      "wait_ack": false,
+      "edit_previous_word": false
+    },
+    "kitty": {
+      "output_mode": "replace",
+      "backspace_delay_ms": 1,
+      "delay_per_char_ms": 1,
+      "wait_ack": false,
+      "edit_previous_word": false
+    },
+    "wezterm": {
+      "output_mode": "replace",
+      "backspace_delay_ms": 1,
+      "delay_per_char_ms": 1,
+      "wait_ack": false,
+      "edit_previous_word": false
+    }
+  }
+}
