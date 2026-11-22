@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+authors = ["Hephaestus Developers <haiphamngoc.tech@gmail.com>"]
+keywords = [
+    "vietnamese",
+    "typing",
+    "input-method",
+    "keyboard",
+]
+categories = ["text-processing", "development-tools::cli"]
+description = "Input method for typing Vietnamese"
+repository = "https://github.com/hephaestus-developers/vntype"
+
+[workspace.dependencies]
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "unwind"
+opt-level = 3
