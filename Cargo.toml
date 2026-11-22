@@ -8,17 +8,14 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 authors = ["Hephaestus Developers <haiphamngoc.tech@gmail.com>"]
-keywords = [
-    "vietnamese",
-    "typing",
-    "input-method",
-    "keyboard",
-]
+keywords = ["vietnamese", "typing", "input-method", "keyboard"]
 categories = ["text-processing", "development-tools::cli"]
-description = "Input method for typing Vietnamese"
+description = "Bộ gõ tiếng Việt"
 repository = "https://github.com/hephaestus-developers/vntype"
 
 [workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+unicode-normalization = { version = "0.1.26", default-features = false }
 
 [profile.release]
 lto = true
