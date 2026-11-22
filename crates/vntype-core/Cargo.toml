@@ -1,0 +1,20 @@
+[package]
+name = "vntype-core"
+description = "Máy biến đổi chuỗi phím tiếng Việt, khôi phục phím thô, tính hiệu chuỗi và chuyển bảng mã."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[features]
+default = ["std", "charset"]
+std = ["vntype-syllable/std", "unicode-normalization/std"]
+charset = ["std"]
+
+[dependencies]
+vntype-syllable = { workspace = true, default-features = false }
+arrayvec = { workspace = true }
+unicode-normalization = { workspace = true, default-features = false }

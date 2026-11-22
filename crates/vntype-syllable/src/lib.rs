@@ -17,8 +17,8 @@ pub mod tone;
 
 pub use case::{lower, upper};
 pub use phonology::{
-    compose_char, decompose_char, is_letter, is_vowel, parse, strip_tone, Decomposed, Mark, Syllable,
-    VOWELS,
+    Decomposed, Mark, Syllable, VOWELS, compose_char, decompose_char, is_letter, is_vowel, parse,
+    strip_tone,
 };
-pub use spellcheck::{check, check_final, check_with, tone_allowed, tone_allowed_with, Status};
-pub use tone::{place_tone, tone_index, ToneStyle};
+pub use spellcheck::{Status, check, check_final, check_with, tone_allowed, tone_allowed_with};
+pub use tone::{ToneStyle, place_tone, tone_index};

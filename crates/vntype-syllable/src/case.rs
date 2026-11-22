@@ -3,6 +3,13 @@
 /// Chuyển một ký tự sang dạng chữ thường.
 ///
 /// Nếu kết quả chuyển đổi của Unicode sinh ra nhiều hơn một ký tự, hàm giữ nguyên ký tự gốc.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(vntype_syllable::lower('Đ'), 'đ');
+/// assert_eq!(vntype_syllable::lower('Ế'), 'ế');
+/// ```
 #[inline]
 pub fn lower(c: char) -> char {
     let mut it = c.to_lowercase();
@@ -15,6 +22,13 @@ pub fn lower(c: char) -> char {
 /// Chuyển một ký tự sang dạng chữ hoa.
 ///
 /// Nếu kết quả chuyển đổi của Unicode sinh ra nhiều hơn một ký tự, hàm giữ nguyên ký tự gốc.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(vntype_syllable::upper('đ'), 'Đ');
+/// assert_eq!(vntype_syllable::upper('ự'), 'Ự');
+/// ```
 #[inline]
 pub fn upper(c: char) -> char {
     let mut it = c.to_uppercase();

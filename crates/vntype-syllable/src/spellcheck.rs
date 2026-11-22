@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::iter;
 use spin::Once;
 
-use crate::phonology::{is_letter, is_vowel, parse, FRONT_VOWELS, ONSETS};
+use crate::phonology::{FRONT_VOWELS, ONSETS, is_letter, is_vowel, parse};
 
 /// Trạng thái hợp lệ chính tả của một âm tiết đang gõ hoặc đã hoàn chỉnh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -134,6 +134,16 @@ fn onset_ok(onset: &str, first: char) -> bool {
 }
 
 /// Kiểm tra chính tả khi đang gõ của một chuỗi chữ thường không dấu thanh (không cho phép âm cuối `k`).
+///
+/// # Examples
+///
+/// ```
+/// use vntype_syllable::{check, Status};
+///
+/// assert_eq!(check("thương", 0), Status::Valid);
+/// assert_eq!(check("nghiê", 0), Status::Partial);
+/// assert_eq!(check("ka", 0), Status::Invalid);
+/// ```
 pub fn check(s: &str, tone: u8) -> Status {
     check_with(s, tone, false)
 }
@@ -188,13 +198,13 @@ pub fn check_with(s: &str, tone: u8, allow_coda_k: bool) -> Status {
     if coda.is_empty() {
         return if t.relaxed_any.contains(&cluster) { Status::Partial } else { Status::Invalid };
     }
-    if let Some(set) = relaxed_for_coda.get(coda) {
-        if set.contains(&cluster) {
-            if stop_bad && stop_codas.contains(&coda) {
-                return Status::Invalid;
-            }
-            return Status::Partial;
+    if let Some(set) = relaxed_for_coda.get(coda)
+        && set.contains(&cluster)
+    {
+        if stop_bad && stop_codas.contains(&coda) {
+            return Status::Invalid;
         }
+        return Status::Partial;
     }
     Status::Invalid
 }
@@ -207,11 +217,7 @@ pub fn check_final(s: &str, tone: u8, allow_coda_k: bool) -> Status {
     }
     let syl = parse(s);
     let stop_codas = if allow_coda_k { STOP_CODAS_WITH_K } else { STOP_CODAS };
-    if stop_codas.contains(&syl.coda.as_str()) && !matches!(tone, 1 | 5) {
-        Status::Invalid
-    } else {
-        st
-    }
+    if stop_codas.contains(&syl.coda.as_str()) && !matches!(tone, 1 | 5) { Status::Invalid } else { st }
 }
 
 /// Kiểm tra mã thanh có hợp lệ với âm cuối khi đang gõ hay không (âm cuối tắc không đi với thanh huyền, hỏi, ngã).
@@ -237,5 +243,35 @@ mod tests {
         assert_eq!(check_final("mô", 0, false), Status::Valid);
         assert_eq!(check_final("đăk", 1, true), Status::Valid);
         assert_eq!(check_final("đăk", 0, true), Status::Invalid);
+    }
+
+    #[test]
+    fn check_valid_partial_and_invalid() {
+        assert_eq!(check("thương", 0), Status::Valid);
+        assert_eq!(check("nghiêng", 0), Status::Valid);
+        assert_eq!(check("quynh", 2), Status::Valid);
+
+        assert_eq!(check("", 0), Status::Partial);
+        assert_eq!(check("ngh", 0), Status::Partial);
+        assert_eq!(check("nghiê", 0), Status::Partial);
+
+        assert_eq!(check("ka", 0), Status::Invalid);
+        assert_eq!(check("ghe", 0), Status::Valid);
+        assert_eq!(check("ci", 0), Status::Invalid);
+        assert_eq!(check("quu", 0), Status::Invalid);
+        assert_eq!(check("och", 1), Status::Invalid);
+        assert_eq!(check("123", 0), Status::Invalid);
+    }
+
+    #[test]
+    fn tone_allowed_on_codas() {
+        assert!(tone_allowed("dat", 0));
+        assert!(tone_allowed("dat", 1));
+        assert!(tone_allowed("dat", 5));
+        assert!(!tone_allowed("dat", 2));
+        assert!(!tone_allowed("dat", 3));
+        assert!(!tone_allowed("dat", 4));
+        assert!(!tone_allowed_with("đăk", 3, true));
+        assert!(tone_allowed_with("đăk", 5, true));
     }
 }

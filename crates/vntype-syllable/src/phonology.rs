@@ -157,11 +157,7 @@ pub fn compose_char(base: char, mark: Option<Mark>, tone: u8, is_upper: bool) ->
     let mut it = buf[..n].iter().copied().nfc();
     let ch = it.next().unwrap_or(base);
     debug_assert!(it.next().is_none(), "compose_char không sinh ra đúng 1 ký tự: {:?}", &buf[..n]);
-    if is_upper {
-        upper(ch)
-    } else {
-        ch
-    }
+    if is_upper { upper(ch) } else { ch }
 }
 
 /// Phân rã một ký tự tiếng Việt bất kỳ thành chữ cơ sở, dấu phụ, dấu thanh và cờ viết hoa.
@@ -186,6 +182,12 @@ pub fn decompose_char(ch: char) -> Decomposed {
 }
 
 /// Tách dấu thanh ra khỏi một từ, trả về cặp `(chuỗi_đã_bỏ_thanh, mã_thanh)`.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(vntype_syllable::strip_tone("tiếng"), ("tiêng".to_string(), 1));
+/// ```
 pub fn strip_tone(text: &str) -> (String, u8) {
     let mut out = String::with_capacity(text.len());
     let mut tone = 0;
@@ -200,6 +202,15 @@ pub fn strip_tone(text: &str) -> (String, u8) {
 }
 
 /// Tách một chuỗi chữ thường không mang dấu thanh thành cấu trúc [`Syllable`].
+///
+/// # Examples
+///
+/// ```
+/// let syl = vntype_syllable::parse("thương");
+/// assert_eq!(syl.onset, "th");
+/// assert_eq!(syl.cluster, "ươ");
+/// assert_eq!(syl.coda, "ng");
+/// ```
 pub fn parse(s: &str) -> Syllable {
     let cs: Vec<char> = s.chars().collect();
     let onset: &str = if s.starts_with("gi") && cs.len() > 2 && is_vowel(cs[2]) {
@@ -219,5 +230,72 @@ pub fn parse(s: &str) -> Syllable {
         cluster: cs[i..j].iter().collect(),
         coda: cs[j..].iter().collect(),
         cluster_start: i,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compose_and_decompose_roundtrip() {
+        let cases = [
+            ('a', None, 0, false, 'a'),
+            ('a', Some(Mark::Circumflex), 1, false, 'ấ'),
+            ('a', Some(Mark::Breve), 5, true, 'Ặ'),
+            ('e', Some(Mark::Circumflex), 3, true, 'Ể'),
+            ('u', Some(Mark::Horn), 5, false, 'ự'),
+            ('d', Some(Mark::Stroke), 0, false, 'đ'),
+            ('d', Some(Mark::Stroke), 0, true, 'Đ'),
+        ];
+        for (base, mark, tone, is_upper, expected) in cases {
+            let ch = compose_char(base, mark, tone, is_upper);
+            assert_eq!(ch, expected);
+            let d = decompose_char(ch);
+            assert_eq!(d, Decomposed { base, mark, tone, upper: is_upper });
+        }
+    }
+
+    #[test]
+    fn strip_tone_cases() {
+        assert_eq!(strip_tone("tiếng"), ("tiêng".into(), 1));
+        assert_eq!(strip_tone("TIẾNG"), ("TIÊNG".into(), 1));
+        assert_eq!(strip_tone("người"), ("ngươi".into(), 2));
+        assert_eq!(strip_tone("khong"), ("khong".into(), 0));
+    }
+
+    #[test]
+    fn parse_syllables() {
+        let s1 = parse("thương");
+        assert_eq!(
+            s1,
+            Syllable { onset: "th".into(), cluster: "ươ".into(), coda: "ng".into(), cluster_start: 2 }
+        );
+        assert_eq!(s1.cluster_end(), 4);
+
+        assert_eq!(
+            parse("gia"),
+            Syllable { onset: "gi".into(), cluster: "a".into(), coda: "".into(), cluster_start: 2 }
+        );
+        assert_eq!(
+            parse("gi"),
+            Syllable { onset: "g".into(), cluster: "i".into(), coda: "".into(), cluster_start: 1 }
+        );
+        assert_eq!(
+            parse("quynh"),
+            Syllable { onset: "qu".into(), cluster: "y".into(), coda: "nh".into(), cluster_start: 2 }
+        );
+        assert_eq!(
+            parse("anh"),
+            Syllable { onset: "".into(), cluster: "a".into(), coda: "nh".into(), cluster_start: 0 }
+        );
+    }
+
+    #[test]
+    fn vowel_and_letter_predicates() {
+        assert!(is_vowel('a') && is_vowel('ơ') && is_vowel('ư'));
+        assert!(!is_vowel('b') && !is_vowel('á') && !is_vowel('A'));
+        assert!(is_letter('a') && is_letter('đ') && is_letter('ư'));
+        assert!(!is_letter('Á') && !is_letter('1'));
     }
 }
