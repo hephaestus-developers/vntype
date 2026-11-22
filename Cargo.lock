@@ -222,6 +222,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vntype-engine"
+version = "0.1.0"
+dependencies = [
+ "unicode-normalization",
+ "vntype-config",
+ "vntype-core",
+ "vntype-syllable",
+]
+
+[[package]]
 name = "vntype-syllable"
 version = "0.1.0"
 dependencies = [

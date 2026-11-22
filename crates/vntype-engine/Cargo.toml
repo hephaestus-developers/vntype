@@ -1,0 +1,16 @@
+[package]
+name = "vntype-engine"
+description = "Tầng ứng dụng và máy trạng thái phiên gõ tiếng Việt (ImeSession, Ports, từ điển và macro)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[dependencies]
+vntype-syllable = { workspace = true, features = ["std", "serde"] }
+vntype-core = { workspace = true }
+vntype-config = { workspace = true }
+unicode-normalization = { workspace = true, features = ["std"] }
