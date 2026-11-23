@@ -39,12 +39,29 @@ fn main() {
 
     let cfg = load_config_or_default(default_config_path());
     let routing = SharedRoutingBlock::new();
-    let mut hook = WindowsHookProcessor::new(cfg);
+    let mut hook = WindowsHookProcessor::new(cfg.clone());
 
     if args.iter().any(|a| a == "--self-test" || a == "--check") {
         let _ = hook.process_hook_key(&routing, 1, KeyEvent::ch('a'), 0x41);
         let (consumed, batches) = hook.process_hook_key(&routing, 1, KeyEvent::ch('s'), 0x53);
         assert!(consumed && !batches.is_empty());
         println!("vntype-hook self-test OK");
+        return;
+    }
+
+    #[cfg(windows)]
+    {
+        if let Err(err) = crate::keyboard_hook::win_hook::run_hook_event_loop(cfg) {
+            eprintln!("vntype-hook: lỗi khởi chạy Win32 hook (mã lỗi {err})");
+            std::process::exit(1);
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (hook, routing, cfg);
+        eprintln!(
+            "vntype-hook: chỉ chạy vòng lặp WH_KEYBOARD_LL trên Windows (hãy dùng --self-test để kiểm tra logic)."
+        );
     }
 }

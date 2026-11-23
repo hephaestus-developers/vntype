@@ -94,6 +94,90 @@ impl SharedRoutingBlock {
     }
 }
 
+#[cfg(windows)]
+pub mod win_shm {
+    use core::ffi::c_void;
+    use core::ops::Deref;
+    use core::ptr::NonNull;
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::System::Memory::{
+        CreateFileMappingW, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile, PAGE_READWRITE,
+        UnmapViewOfFile,
+    };
+
+    use super::{SHARED_MEMORY_NAME, SharedRoutingBlock};
+
+    /// Ánh xạ vùng nhớ dùng chung Win32 (`CreateFileMappingW` + `MapViewOfFile`) cho [`SharedRoutingBlock`].
+    pub struct SharedRoutingMapping {
+        handle: HANDLE,
+        view: NonNull<SharedRoutingBlock>,
+    }
+
+    unsafe impl Send for SharedRoutingMapping {}
+    unsafe impl Sync for SharedRoutingMapping {}
+
+    impl SharedRoutingMapping {
+        /// Mở hoặc tạo mới vùng nhớ dùng chung [`SHARED_MEMORY_NAME`].
+        pub fn open_or_create() -> Result<Self, u32> {
+            let mut wide_name: Vec<u16> = SHARED_MEMORY_NAME.encode_utf16().collect();
+            wide_name.push(0);
+
+            let size = core::mem::size_of::<SharedRoutingBlock>() as u32;
+            let handle = unsafe {
+                CreateFileMappingW(
+                    INVALID_HANDLE_VALUE,
+                    core::ptr::null(),
+                    PAGE_READWRITE,
+                    0,
+                    size,
+                    wide_name.as_ptr(),
+                )
+            };
+            if handle.is_null() {
+                return Err(unsafe { GetLastError() });
+            }
+
+            let already_exists = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+            let mapped = unsafe { MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size as usize) };
+            let ptr = mapped.Value as *mut SharedRoutingBlock;
+            let Some(view) = NonNull::new(ptr) else {
+                let err = unsafe { GetLastError() };
+                unsafe { CloseHandle(handle) };
+                return Err(err);
+            };
+
+            let block = unsafe { view.as_ref() };
+            if !already_exists || !block.is_valid() {
+                unsafe {
+                    ptr.write(SharedRoutingBlock::new());
+                }
+            }
+
+            Ok(Self { handle, view })
+        }
+    }
+
+    impl Deref for SharedRoutingMapping {
+        type Target = SharedRoutingBlock;
+
+        fn deref(&self) -> &Self::Target {
+            unsafe { self.view.as_ref() }
+        }
+    }
+
+    impl Drop for SharedRoutingMapping {
+        fn drop(&mut self) {
+            unsafe {
+                let addr = MEMORY_MAPPED_VIEW_ADDRESS { Value: self.view.as_ptr() as *mut c_void };
+                let _ = UnmapViewOfFile(addr);
+                let _ = CloseHandle(self.handle);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -59,6 +59,60 @@ pub fn is_windows_terminal_app(app: &str) -> bool {
     )
 }
 
+#[cfg(windows)]
+pub mod win_input_scope_query {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::System::Variant::VARIANT;
+    use windows::Win32::UI::TextServices::{
+        GUID_PROP_INPUTSCOPE, ITfContext, ITfInputScope, ITfRange, TF_SELECTION, TF_SELECTIONSTYLE,
+    };
+    use windows_core::Interface;
+
+    /// Truy vấn danh sách mã `InputScope` từ `ITfContext` hiện tại qua `GUID_PROP_INPUTSCOPE`.
+    pub fn query_context_input_scopes(context: &ITfContext, ec: u32) -> Vec<i32> {
+        unsafe {
+            let mut sel = [TF_SELECTION {
+                range: core::mem::ManuallyDrop::new(None),
+                style: TF_SELECTIONSTYLE::default(),
+            }];
+            let mut fetched = 0u32;
+            if context.GetSelection(ec, 0, &mut sel, &mut fetched).is_err() || fetched == 0 {
+                return Vec::new();
+            }
+            let range_opt: Option<ITfRange> =
+                core::mem::ManuallyDrop::into_inner(core::ptr::read(&sel[0].range));
+            let Some(range) = range_opt else {
+                return Vec::new();
+            };
+
+            let Ok(prop) = context.GetProperty(&GUID_PROP_INPUTSCOPE) else {
+                return Vec::new();
+            };
+            let mut var = VARIANT::default();
+            if prop.GetValue(ec, &range, &mut var).is_err() {
+                return Vec::new();
+            }
+
+            let Ok(unk) = windows_core::IUnknown::try_from(&var) else {
+                return Vec::new();
+            };
+            let Ok(input_scope) = unk.cast::<ITfInputScope>() else {
+                return Vec::new();
+            };
+
+            let mut ptr = core::ptr::null_mut();
+            let mut count = 0u32;
+            if input_scope.GetInputScopes(&mut ptr, &mut count).is_err() || ptr.is_null() {
+                return Vec::new();
+            }
+            let slice = core::slice::from_raw_parts(ptr, count as usize);
+            let scopes: Vec<i32> = slice.iter().map(|s| s.0).collect();
+            CoTaskMemFree(Some(ptr as *const core::ffi::c_void));
+            scopes
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
