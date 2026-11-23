@@ -375,12 +375,7 @@ pub mod win_tray {
                         to_wide(label).as_ptr(),
                     );
                 }
-                AppendMenuW(
-                    menu,
-                    MF_POPUP,
-                    charset_menu as usize,
-                    to_wide("Bảng mã").as_ptr(),
-                );
+                AppendMenuW(menu, MF_POPUP, charset_menu as usize, to_wide("Bảng mã").as_ptr());
             }
 
             let method_menu = CreatePopupMenu();
@@ -394,12 +389,7 @@ pub mod win_tray {
                 );
                 AppendMenuW(method_menu, MF_STRING | vni_flag, CMD_VNI, to_wide("VNI").as_ptr());
                 AppendMenuW(method_menu, MF_STRING | viqr_flag, CMD_VIQR, to_wide("VIQR").as_ptr());
-                AppendMenuW(
-                    menu,
-                    MF_POPUP,
-                    method_menu as usize,
-                    to_wide("Kiểu gõ").as_ptr(),
-                );
+                AppendMenuW(menu, MF_POPUP, method_menu as usize, to_wide("Kiểu gõ").as_ptr());
             }
 
             AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());

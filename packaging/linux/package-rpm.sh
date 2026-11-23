@@ -22,9 +22,7 @@ CARGO_FLAGS=(--release)
 echo "Building VNType $VERSION ($ARCH) release binaries..."
 cargo build "${CARGO_FLAGS[@]}" \
     -p vntype-cli \
-    -p vntype-settings \
     -p vntype-ibus \
-    -p vntype-wayland \
     -p vntype-ffi \
     --manifest-path "$ROOT_DIR/Cargo.toml"
 
@@ -39,47 +37,40 @@ cmake -B "$FCITX_BUILD" -S "$ROOT_DIR/platforms/linux/fcitx5" \
 cmake --build "$FCITX_BUILD" -j"$(nproc)"
 
 STAGE="$TOPDIR/SOURCES/stage"
-install -Dm755 "$ROOT_DIR/target/release/vntype" "$STAGE/usr/bin/vntype"
-install -Dm755 "$ROOT_DIR/target/release/vntype-settings" "$STAGE/usr/bin/vntype-settings"
+install -Dm755 "$ROOT_DIR/target/release/vntype-cli" "$STAGE/usr/bin/vntype-cli"
 install -Dm755 "$ROOT_DIR/target/release/vntype-ibus" "$STAGE/usr/libexec/vntype-ibus"
 mkdir -p "$STAGE/usr/share/ibus/component"
 sed 's|@LIBEXECDIR@|/usr/libexec|g' \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \
     > "$STAGE/usr/share/ibus/component/vntype.xml"
-install -Dm755 "$ROOT_DIR/target/release/vntype-wayland" "$STAGE/usr/bin/vntype-wayland"
-mkdir -p "$STAGE/usr/lib/systemd/user"
-sed 's|%h/.local/bin|/usr/bin|g' \
-    "$ROOT_DIR/platforms/linux/wayland/data/vntype-wayland.service" \
-    > "$STAGE/usr/lib/systemd/user/vntype-wayland.service"
 DESTDIR="$STAGE" cmake --install "$FCITX_BUILD"
 
 cat > "$TOPDIR/SPECS/vntype.spec" <<EOF
-Name:           vntype-common
+Name:           vntype
 Version:        $VERSION
 Release:        1%{?dist}
-Summary:        VNType Vietnamese input method CLI and settings UI
-License:        MIT OR Apache-2.0
+Summary:        VNType Vietnamese input method
+License:        MIT
 
 %description
-VNType Vietnamese input method CLI and settings UI.
+VNType Vietnamese input method.
+
+%package -n vntype-cli
+Summary:        VNType Vietnamese input method CLI
+
+%description -n vntype-cli
+VNType Vietnamese input method CLI.
 
 %package -n vntype-ibus
 Summary:        VNType IBus input method engine
-Requires:       vntype-common = %{version}-%{release}, ibus
+Requires:       ibus
 
 %description -n vntype-ibus
 VNType IBus input method engine.
 
-%package -n vntype-wayland
-Summary:        VNType Wayland virtual-keyboard input method
-Requires:       vntype-common = %{version}-%{release}
-
-%description -n vntype-wayland
-VNType Wayland virtual-keyboard input method.
-
 %package -n vntype-fcitx5
 Summary:        VNType Fcitx5 input method addon
-Requires:       vntype-common = %{version}-%{release}, fcitx5
+Requires:       fcitx5
 
 %description -n vntype-fcitx5
 VNType Fcitx5 input method addon.
@@ -88,17 +79,12 @@ VNType Fcitx5 input method addon.
 rm -rf %{buildroot}
 cp -a "$STAGE"/* %{buildroot}/
 
-%files
-%{_bindir}/vntype
-%{_bindir}/vntype-settings
+%files -n vntype-cli
+%{_bindir}/vntype-cli
 
 %files -n vntype-ibus
 %{_libexecdir}/vntype-ibus
 %{_datadir}/ibus/component/vntype.xml
-
-%files -n vntype-wayland
-%{_bindir}/vntype-wayland
-%{_userunitdir}/vntype-wayland.service
 
 %files -n vntype-fcitx5
 %{_libdir}/fcitx5/libvntype.so

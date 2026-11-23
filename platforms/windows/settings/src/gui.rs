@@ -123,8 +123,7 @@ pub mod win_gui {
         ) -> Self {
             setup_vietnamese_fonts(&cc.egui_ctx);
             apply_light_windows_theme(&cc.egui_ctx);
-            cc.egui_ctx
-                .send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Light));
+            cc.egui_ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Light));
             if let Some(b) = &bridge
                 && let Ok(mut guard) = b.egui_ctx.lock()
             {
@@ -351,6 +350,7 @@ pub mod win_gui {
         response
     }
 
+    #[cfg(windows)]
     fn show_native_dropdown_menu(
         ctx: &egui::Context,
         anchor_logical: egui::Pos2,
@@ -361,13 +361,12 @@ pub mod win_gui {
         use windows_sys::Win32::Foundation::POINT;
         use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            AppendMenuW, CreatePopupMenu, DestroyMenu, FindWindowW, MF_CHECKED, MF_SEPARATOR,
-            MF_STRING, MF_UNCHECKED, SetForegroundWindow, TPM_LEFTALIGN, TPM_NONOTIFY,
-            TPM_RETURNCMD, TPM_TOPALIGN, TrackPopupMenu,
+            AppendMenuW, CreatePopupMenu, DestroyMenu, FindWindowW, MF_CHECKED, MF_SEPARATOR, MF_STRING,
+            MF_UNCHECKED, SetForegroundWindow, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_TOPALIGN,
+            TrackPopupMenu,
         };
 
-        let mut title: Vec<u16> =
-            concat!("VNType ", env!("CARGO_PKG_VERSION")).encode_utf16().collect();
+        let mut title: Vec<u16> = concat!("VNType ", env!("CARGO_PKG_VERSION")).encode_utf16().collect();
         title.push(0);
 
         unsafe {
@@ -408,11 +407,7 @@ pub mod win_gui {
             ) as usize;
             DestroyMenu(menu);
 
-            if cmd > 0 && cmd <= items.len() {
-                Some(items[cmd - 1].0.to_string())
-            } else {
-                None
-            }
+            if cmd > 0 && cmd <= items.len() { Some(items[cmd - 1].0.to_string()) } else { None }
         }
     }
 
@@ -429,22 +424,13 @@ pub mod win_gui {
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
             let painter = ui.painter();
-            painter.rect(
-                rect,
-                4.0,
-                visuals.bg_fill,
-                visuals.bg_stroke,
-                egui::StrokeKind::Inside,
-            );
+            painter.rect(rect, 4.0, visuals.bg_fill, visuals.bg_stroke, egui::StrokeKind::Inside);
             let galley = painter.layout_no_wrap(
                 selected_label.to_owned(),
                 egui::FontId::new(13.5, egui::FontFamily::Proportional),
                 visuals.text_color(),
             );
-            let text_pos = egui::pos2(
-                rect.left() + 8.0,
-                rect.center().y - galley.size().y * 0.5,
-            );
+            let text_pos = egui::pos2(rect.left() + 8.0, rect.center().y - galley.size().y * 0.5);
             painter.galley(text_pos, galley, visuals.text_color());
 
             let ac = egui::pos2(rect.right() - 14.0, rect.center().y);
@@ -460,26 +446,52 @@ pub mod win_gui {
             ));
         }
 
-        if response.clicked() {
-            show_native_dropdown_menu(
-                ui.ctx(),
-                egui::pos2(rect.left(), rect.bottom() + 2.0),
-                items,
-                active_key,
-                separators_before,
-            )
-        } else {
-            None
+        #[cfg(windows)]
+        {
+            if response.clicked() {
+                show_native_dropdown_menu(
+                    ui.ctx(),
+                    egui::pos2(rect.left(), rect.bottom() + 2.0),
+                    items,
+                    active_key,
+                    separators_before,
+                )
+            } else {
+                None
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let popup_id = response.id.with("dropdown");
+            if response.clicked() {
+                ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+            }
+            let mut selected = None;
+            egui::popup::popup_below_widget(
+                ui,
+                popup_id,
+                &response,
+                egui::PopupCloseBehavior::CloseOnClick,
+                |ui| {
+                    ui.set_min_width(rect.width());
+                    for (idx, (key, label)) in items.iter().enumerate() {
+                        if separators_before.contains(&idx) {
+                            ui.separator();
+                        }
+                        if ui.selectable_label(*key == active_key, *label).clicked() {
+                            selected = Some((*key).to_string());
+                        }
+                    }
+                },
+            );
+            selected
         }
     }
 
     fn styled_checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Response {
         let font_id = egui::FontId::new(13.5, egui::FontFamily::Proportional);
-        let galley = ui.painter().layout_no_wrap(
-            text.to_owned(),
-            font_id,
-            egui::Color32::from_rgb(32, 32, 32),
-        );
+        let galley =
+            ui.painter().layout_no_wrap(text.to_owned(), font_id, egui::Color32::from_rgb(32, 32, 32));
         let box_size = 16.0_f32;
         let spacing = 7.0_f32;
         let total_size = egui::vec2(box_size + spacing + galley.size().x, galley.size().y.max(18.0));
@@ -525,10 +537,7 @@ pub mod win_gui {
                     egui::StrokeKind::Inside,
                 );
             }
-            let text_pos = egui::pos2(
-                box_rect.right() + spacing,
-                rect.center().y - galley.size().y * 0.5,
-            );
+            let text_pos = egui::pos2(box_rect.right() + spacing, rect.center().y - galley.size().y * 0.5);
             painter.galley(text_pos, galley, egui::Color32::from_rgb(32, 32, 32));
         }
         response
@@ -755,12 +764,11 @@ pub mod win_gui {
                                             &[6, 11],
                                         ) {
                                             self.vm.draft.charset = selected_key.clone();
-                                            self.vm.draft.unicode_form =
-                                                if selected_key == "unicode_nfd" {
-                                                    UnicodeForm::Nfd
-                                                } else {
-                                                    UnicodeForm::Nfc
-                                                };
+                                            self.vm.draft.unicode_form = if selected_key == "unicode_nfd" {
+                                                UnicodeForm::Nfd
+                                            } else {
+                                                UnicodeForm::Nfc
+                                            };
                                             changed = true;
                                         }
                                         ui.end_row();

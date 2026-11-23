@@ -10,7 +10,7 @@ categories.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "vntype"
+name = "vntype-cli"
 path = "src/main.rs"
 
 [dependencies]

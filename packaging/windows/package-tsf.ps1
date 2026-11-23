@@ -52,7 +52,7 @@ New-Item -ItemType Directory -Path $StageDir -Force | Out-Null
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 
 try {
-    foreach ($File in @("vntype_tsf.dll", "vntype-settings.exe", "vntype.exe")) {
+    foreach ($File in @("vntype_tsf.dll", "vntype-settings.exe", "vntype-cli.exe")) {
         $Src = Join-Path $BinDir $File
         if (-not (Test-Path $Src)) {
             throw "Expected build artifact not found: $Src"
@@ -67,7 +67,7 @@ VNType $Version TSF ($Arch)
 Files:
   - vntype_tsf.dll       Text Services Framework (TSF) in-process COM DLL
   - vntype-settings.exe  Settings GUI
-  - vntype.exe           CLI utility
+  - vntype-cli.exe       CLI utility
 
 Installation (Administrator):
   regsvr32 vntype_tsf.dll

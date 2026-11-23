@@ -357,6 +357,34 @@ fn prop_submenu(key: &str, label: &str, children: Vec<Structure<'static>>) -> St
     build_ibus_property_with_sub(key, 3, label, label, 0, children)
 }
 
+const CHARSET_ITEMS: &[(&str, &str)] = &[
+    ("unicode", "Unicode"),
+    ("tcvn3", "TCVN3 (ABC)"),
+    ("vni_windows", "VNI Windows"),
+    ("viqr", "VIQR"),
+    ("cp1258", "Vietnamese locale CP 1258"),
+    ("unicode_nfd", "Unicode tổ hợp (NFD)"),
+    ("utf8_literal", "UTF-8 Literal"),
+    ("ncr_decimal", "NCR Decimal"),
+    ("ncr_hex", "NCR Hex"),
+    ("cstring_hex", "Unicode C String"),
+    ("x_utf8", "X UTF-8"),
+    ("viscii", "VISCII"),
+    ("vps", "VPS"),
+    ("bkhcm2", "BK HCM 2"),
+    ("bkhcm1", "BK HCM 1"),
+    ("vietware_x", "Vietware X"),
+    ("vietware_full", "Vietware F"),
+];
+
+fn active_charset_key(cfg: &Config) -> &str {
+    if cfg.charset == "unicode" && cfg.unicode_form == UnicodeForm::Nfd {
+        "unicode_nfd"
+    } else {
+        cfg.charset.as_str()
+    }
+}
+
 fn build_changed_properties(changed_key: &str, cfg: &Config) -> Vec<Structure<'static>> {
     let method = cfg.input_method.trim().to_ascii_lowercase();
     if changed_key.starts_with("vntype.im.") {
@@ -368,14 +396,11 @@ fn build_changed_properties(changed_key: &str, cfg: &Config) -> Vec<Structure<'s
         ];
     }
     if changed_key.starts_with("vntype.charset.") {
-        return vec![
-            prop_radio(
-                "vntype.charset.nfc",
-                "Unicode dựng sẵn (NFC)",
-                cfg.unicode_form == UnicodeForm::Nfc,
-            ),
-            prop_radio("vntype.charset.nfd", "Unicode tổ hợp (NFD)", cfg.unicode_form == UnicodeForm::Nfd),
-        ];
+        let active = active_charset_key(cfg);
+        return CHARSET_ITEMS
+            .iter()
+            .map(|(k, label)| prop_radio(&format!("vntype.charset.{k}"), label, active == *k))
+            .collect();
     }
     if changed_key.starts_with("vntype.tone.") {
         return vec![
@@ -446,22 +471,17 @@ fn build_ibus_prop_list_variant(cfg: &Config) -> OwnedVariant {
                 prop_radio("vntype.im.viqr", "VIQR", method == "viqr"),
             ],
         ),
-        prop_submenu(
-            "vntype.menu.unicode_form",
-            "Bảng mã",
-            vec![
-                prop_radio(
-                    "vntype.charset.nfc",
-                    "Unicode dựng sẵn (NFC)",
-                    cfg.unicode_form == UnicodeForm::Nfc,
-                ),
-                prop_radio(
-                    "vntype.charset.nfd",
-                    "Unicode tổ hợp (NFD)",
-                    cfg.unicode_form == UnicodeForm::Nfd,
-                ),
-            ],
-        ),
+        prop_submenu("vntype.menu.unicode_form", "Bảng mã", {
+            let active = active_charset_key(cfg);
+            let mut list = Vec::with_capacity(CHARSET_ITEMS.len() + 2);
+            for (idx, (k, label)) in CHARSET_ITEMS.iter().enumerate() {
+                if idx == 6 || idx == 11 {
+                    list.push(prop_separator(&format!("vntype.charset.sep{idx}")));
+                }
+                list.push(prop_radio(&format!("vntype.charset.{k}"), label, active == *k));
+            }
+            list
+        }),
         prop_submenu(
             "vntype.menu.tone_style",
             "Kiểu bỏ dấu",
@@ -676,5 +696,6 @@ mod tests {
         let s: &Structure<'_> = prop_list.downcast_ref().unwrap();
         assert_eq!(s.fields()[0].downcast_ref::<&str>().ok(), Some("IBusPropList"));
         assert_eq!(build_changed_properties("vntype.opt.w_as_u", &Config::default()).len(), 1);
+        assert_eq!(build_changed_properties("vntype.charset.tcvn3", &Config::default()).len(), 17);
     }
 }

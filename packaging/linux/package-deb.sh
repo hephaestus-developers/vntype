@@ -31,9 +31,7 @@ CARGO_FLAGS=(--release)
 echo "Building VNType $VERSION ($ARCH) release binaries..."
 cargo build "${CARGO_FLAGS[@]}" \
     -p vntype-cli \
-    -p vntype-settings \
     -p vntype-ibus \
-    -p vntype-wayland \
     -p vntype-ffi \
     --manifest-path "$ROOT_DIR/Cargo.toml"
 
@@ -75,11 +73,10 @@ build_deb() {
         "$OUT_DIR/${pkg}_${VERSION}_${ARCH}.deb"
 }
 
-# 1. vntype-common
-COMMON_ROOT="$STAGE_DIR/vntype-common"
-install -Dm755 "$ROOT_DIR/target/release/vntype" "$COMMON_ROOT/usr/bin/vntype"
-install -Dm755 "$ROOT_DIR/target/release/vntype-settings" "$COMMON_ROOT/usr/bin/vntype-settings"
-build_deb "vntype-common" "" "VNType Vietnamese input method CLI and settings UI"
+# 1. vntype-cli (optional)
+CLI_ROOT="$STAGE_DIR/vntype-cli"
+install -Dm755 "$ROOT_DIR/target/release/vntype-cli" "$CLI_ROOT/usr/bin/vntype-cli"
+build_deb "vntype-cli" "" "VNType Vietnamese input method CLI"
 
 # 2. vntype-ibus
 IBUS_ROOT="$STAGE_DIR/vntype-ibus"
@@ -88,21 +85,12 @@ mkdir -p "$IBUS_ROOT/usr/share/ibus/component"
 sed 's|@LIBEXECDIR@|/usr/libexec|g' \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \
     > "$IBUS_ROOT/usr/share/ibus/component/vntype.xml"
-build_deb "vntype-ibus" "vntype-common (= $VERSION), ibus" "VNType IBus input method engine"
+build_deb "vntype-ibus" "ibus" "VNType IBus input method engine"
 
-# 3. vntype-wayland
-WAYLAND_ROOT="$STAGE_DIR/vntype-wayland"
-install -Dm755 "$ROOT_DIR/target/release/vntype-wayland" "$WAYLAND_ROOT/usr/bin/vntype-wayland"
-mkdir -p "$WAYLAND_ROOT/usr/lib/systemd/user"
-sed 's|%h/.local/bin|/usr/bin|g' \
-    "$ROOT_DIR/platforms/linux/wayland/data/vntype-wayland.service" \
-    > "$WAYLAND_ROOT/usr/lib/systemd/user/vntype-wayland.service"
-build_deb "vntype-wayland" "vntype-common (= $VERSION)" "VNType Wayland virtual-keyboard input method"
-
-# 4. vntype-fcitx5
+# 2. vntype-fcitx5
 FCITX_ROOT="$STAGE_DIR/vntype-fcitx5"
 DESTDIR="$FCITX_ROOT" cmake --install "$FCITX_BUILD"
-build_deb "vntype-fcitx5" "vntype-common (= $VERSION), fcitx5" "VNType Fcitx5 input method addon"
+build_deb "vntype-fcitx5" "fcitx5" "VNType Fcitx5 input method addon"
 
 echo "Created .deb packages in $OUT_DIR:"
 ls -lh "$OUT_DIR"/*.deb

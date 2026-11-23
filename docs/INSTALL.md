@@ -6,22 +6,20 @@ Tài liệu này hướng dẫn cách cài đặt và kích hoạt **VNType** tr
 
 ## 1. Linux
 
-### Tại sao bản đóng gói Linux lại chia thành 4 gói?
+### Tại sao bản đóng gói Linux lại chia thành 2 gói?
 
-Trong thư mục `dist/linux/`, script `package-deb.sh` (và `package-rpm.sh`) tách VNType thành 4 gói độc lập:
+Trong thư mục `dist/linux/`, script `package-deb.sh` (và `package-rpm.sh`) tách VNType thành 2 gói độc lập:
 
 | Gói | Thành phần bên trong | Phụ thuộc |
 | --- | --- | --- |
-| `vntype-common` | `vntype` (CLI) và `vntype-settings` (GUI cấu hình) | Không |
-| `vntype-fcitx5` | Addon C++ `libvntype.so` và cấu hình Fcitx5 | `vntype-common`, `fcitx5` |
-| `vntype-ibus` | Engine `vntype-ibus` và file mô tả `vntype.xml` | `vntype-common`, `ibus` |
-| `vntype-wayland` | Daemon `vntype-wayland` và systemd user service | `vntype-common` |
+| `vntype-fcitx5` | Addon C++ `libvntype.so` và cấu hình Fcitx5 | `fcitx5` |
+| `vntype-ibus` | Engine `vntype-ibus` và file mô tả `vntype.xml` | `ibus` |
 
 **Lý do tách gói:**
 
-- Trên Linux có nhiều framework bộ gõ khác nhau (**IBus**, **Fcitx5**, hoặc **Wayland thuần**).
+- Trên Linux có hai framework bộ gõ phổ biến là **IBus** và **Fcitx5**.
 - Nếu gộp tất cả vào 1 file `.deb`/`.rpm` duy nhất, người dùng GNOME (đang dùng IBus) sẽ bị ép cài cả `fcitx5`, hoặc người dùng KDE/Fcitx5 sẽ bị ép cài cả `ibus` — dễ gây xung đột bộ gõ và kéo theo nhiều thư viện thừa.
-- Bạn chỉ cần cài **`vntype-common` + đúng 1 gói backend** phù hợp với Desktop Environment của mình.
+- Hai gói không trùng tệp nào nên có thể cài đặt độc lập hoặc song song; bạn chỉ cần cài **1 gói** phù hợp với Desktop Environment của mình.
 
 ---
 
@@ -29,11 +27,10 @@ Trong thư mục `dist/linux/`, script `package-deb.sh` (và `package-rpm.sh`) t
 
 | Desktop Environment / Compositor | Khuyến nghị | Gói cần cài |
 | --- | --- | --- |
-| **GNOME** (Ubuntu, Debian GNOME, Fedora Workstation) | **IBus** (mặc định của GNOME) | `vntype-common` + `vntype-ibus` |
-| **KDE Plasma** (Wayland hoặc X11) | **Fcitx5** | `vntype-common` + `vntype-fcitx5` |
-| **XFCE / Cinnamon / MATE / LXQt** (X11) | **Fcitx5** hoặc **IBus** | `vntype-common` + `vntype-fcitx5` (hoặc `vntype-ibus`) |
-| **Hyprland / Sway / Niri** (Wayland + Fcitx5) | **Fcitx5** (khuyên dùng cho app XWayland/Electron) | `vntype-common` + `vntype-fcitx5` |
-| **Hyprland / Sway / wlroots** (Wayland thuần, không dùng Fcitx5/IBus) | **Wayland native** | `vntype-common` + `vntype-wayland` |
+| **GNOME** (Ubuntu, Debian GNOME, Fedora Workstation) | **IBus** (mặc định của GNOME) | `vntype-ibus` |
+| **KDE Plasma** (Wayland hoặc X11) | **Fcitx5** | `vntype-fcitx5` |
+| **XFCE / Cinnamon / MATE / LXQt** (X11) | **Fcitx5** hoặc **IBus** | `vntype-fcitx5` (hoặc `vntype-ibus`) |
+| **Hyprland / Sway / Niri** (Wayland) | **Fcitx5** | `vntype-fcitx5` |
 
 ---
 
@@ -45,23 +42,17 @@ Trong thư mục `dist/linux/`, script `package-deb.sh` (và `package-rpm.sh`) t
    ./packaging/linux/package-deb.sh
    ```
 
-2. **Cài đặt cặp gói tương ứng** bằng `apt` (tự động xử lý dependency):
+2. **Cài đặt gói tương ứng** bằng `apt` (tự động xử lý dependency):
    - **Nếu dùng IBus (GNOME, Ubuntu mặc định):**
 
      ```bash
-     sudo apt install ./dist/linux/vntype-common_*.deb ./dist/linux/vntype-ibus_*.deb
+     sudo apt install ./dist/linux/vntype-ibus_*.deb
      ```
 
    - **Nếu dùng Fcitx5 (KDE Plasma, XFCE, Hyprland...):**
 
      ```bash
-     sudo apt install ./dist/linux/vntype-common_*.deb ./dist/linux/vntype-fcitx5_*.deb
-     ```
-
-   - **Nếu dùng Wayland thuần:**
-
-     ```bash
-     sudo apt install ./dist/linux/vntype-common_*.deb ./dist/linux/vntype-wayland_*.deb
+     sudo apt install ./dist/linux/vntype-fcitx5_*.deb
      ```
 
 ---
@@ -74,28 +65,28 @@ Trong thư mục `dist/linux/`, script `package-deb.sh` (và `package-rpm.sh`) t
    ./packaging/linux/package-rpm.sh
    ```
 
-2. **Cài đặt cặp gói tương ứng**:
+2. **Cài đặt gói tương ứng**:
 
    ```bash
    # Ví dụ với IBus:
-   sudo dnf install ./dist/linux/vntype-common-*.rpm ./dist/linux/vntype-ibus-*.rpm
+   sudo dnf install ./dist/linux/vntype-ibus-*.rpm
 
    # Hoặc với Fcitx5:
-   sudo dnf install ./dist/linux/vntype-common-*.rpm ./dist/linux/vntype-fcitx5-*.rpm
+   sudo dnf install ./dist/linux/vntype-fcitx5-*.rpm
    ```
 
 ---
 
 ### Cài đặt từ mã nguồn (Arch Linux hoặc distro khác)
 
-Dùng script `install-source.sh` và tắt các backend không sử dụng:
+Dùng script `install-source.sh` và tắt backend không sử dụng:
 
 ```bash
-# Ví dụ chỉ cài Common + Fcitx5 vào /usr/local:
-./packaging/linux/install-source.sh --prefix /usr/local --without-ibus --without-wayland
+# Ví dụ chỉ cài Fcitx5 vào /usr/local:
+./packaging/linux/install-source.sh --prefix /usr/local --without-ibus
 
-# Hoặc chỉ cài Common + IBus:
-./packaging/linux/install-source.sh --prefix /usr/local --without-fcitx5 --without-wayland
+# Hoặc chỉ cài IBus:
+./packaging/linux/install-source.sh --prefix /usr/local --without-fcitx5
 
 # Gỡ cài đặt:
 ./packaging/linux/install-source.sh --prefix /usr/local --uninstall
@@ -142,21 +133,13 @@ Dùng script `install-source.sh` và tắt các backend không sử dụng:
   - Thêm `exec-once = fcitx5 -d` vào cấu hình compositor (`hyprland.conf` hoặc `sway/config`).
   - Đặt `XMODIFIERS=@im=fcitx` (và `QT_IM_MODULE=fcitx`, với GTK/Electron dùng Wayland text-input).
   - Thêm **VNType** trong `fcitx5-configtool`.
-- **Với `vntype-wayland` (Wayland thuần, không dùng Fcitx5/IBus)**:
 
-  ```bash
-  systemctl --user daemon-reload
-  systemctl --user enable --now vntype-wayland.service
-  ```
+#### Cấu hình trên Linux
 
-  *(Lưu ý: Compositor cần hỗ trợ giao thức `zwp_input_method_v2` và `zwp_virtual_keyboard_v1`.)*
-
-#### Mở giao diện cài đặt VNType
-
-Chạy từ menu ứng dụng hoặc terminal:
+Trên IBus/GNOME, bạn cấu hình trực tiếp qua menu **VNType** trên thanh Top Bar (Kiểu gõ, Bảng mã, Kiểu bỏ dấu, Tuỳ chọn bộ gõ, Gõ tắt). Ngoài ra có thể dùng CLI:
 
 ```bash
-vntype-settings
+vntype-cli --help
 ```
 
 ---

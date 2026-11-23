@@ -18,7 +18,7 @@ vntype-config = { workspace = true }
 vntype-engine = { workspace = true }
 vntype-adapter = { workspace = true }
 vntype-win-ipc = { workspace = true }
-vntype-settings = { path = "../../../apps/vntype-settings" }
+vntype-settings = { path = "../settings" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

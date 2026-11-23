@@ -166,8 +166,35 @@ impl IbusEngineService {
             "vntype.im.vni" if checked => cfg.input_method = "vni".into(),
             "vntype.im.simple_telex" if checked => cfg.input_method = "simple_telex".into(),
             "vntype.im.viqr" if checked => cfg.input_method = "viqr".into(),
-            "vntype.charset.nfc" if checked => cfg.unicode_form = UnicodeForm::Nfc,
-            "vntype.charset.nfd" if checked => cfg.unicode_form = UnicodeForm::Nfd,
+            _ if name.starts_with("vntype.charset.") && checked => {
+                let key = &name["vntype.charset.".len()..];
+                if matches!(
+                    key,
+                    "unicode"
+                        | "tcvn3"
+                        | "vni_windows"
+                        | "viqr"
+                        | "cp1258"
+                        | "unicode_nfd"
+                        | "utf8_literal"
+                        | "ncr_decimal"
+                        | "ncr_hex"
+                        | "cstring_hex"
+                        | "x_utf8"
+                        | "viscii"
+                        | "vps"
+                        | "bkhcm2"
+                        | "bkhcm1"
+                        | "vietware_x"
+                        | "vietware_full"
+                ) {
+                    cfg.charset = key.into();
+                    cfg.unicode_form =
+                        if key == "unicode_nfd" { UnicodeForm::Nfd } else { UnicodeForm::Nfc };
+                } else {
+                    changed = false;
+                }
+            }
             "vntype.tone.new" if checked => cfg.tone_style = ToneStyle::New,
             "vntype.tone.old" if checked => cfg.tone_style = ToneStyle::Old,
             "vntype.opt.spell_check" => cfg.spell_check = checked,
@@ -372,17 +399,21 @@ mod tests {
         assert!(svc.drain_signals().is_empty());
 
         svc.property_activate("vntype.im.vni", 1);
-        svc.property_activate("vntype.charset.nfd", 1);
+        svc.property_activate("vntype.charset.tcvn3", 1);
         svc.property_activate("vntype.tone.old", 1);
         svc.property_activate("vntype.opt.w_as_u", 1);
         svc.property_activate("vntype.macro.enabled", 0);
 
         let cfg = svc.current_config();
         assert_eq!(cfg.input_method, "vni");
-        assert_eq!(cfg.unicode_form, UnicodeForm::Nfd);
+        assert_eq!(cfg.charset, "tcvn3");
+        assert_eq!(cfg.unicode_form, UnicodeForm::Nfc);
         assert_eq!(cfg.tone_style, ToneStyle::Old);
         assert!(cfg.w_as_u);
         assert!(!cfg.macro_enabled);
+
+        svc.property_activate("vntype.charset.unicode_nfd", 1);
+        assert_eq!(svc.current_config().unicode_form, UnicodeForm::Nfd);
         assert!(svc.drain_signals().iter().any(|s| matches!(s, IbusSignal::UpdateMenu { .. })));
 
         let _ = std::fs::remove_file(tmp);
