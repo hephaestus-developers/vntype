@@ -1,0 +1,13 @@
+[package]
+name = "vntype-adapter"
+description = "Bộ điều phối Adapter đa nền tảng, quy đổi UTF-8/UTF-16, kiểm tra an toàn surrounding và hàng đợi hiệu ứng."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[dependencies]
+vntype-engine = { workspace = true }

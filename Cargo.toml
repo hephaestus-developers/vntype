@@ -18,6 +18,7 @@ vntype-syllable = { path = "crates/vntype-syllable", default-features = false }
 vntype-core = { path = "crates/vntype-core" }
 vntype-config = { path = "crates/vntype-config" }
 vntype-engine = { path = "crates/vntype-engine" }
+vntype-adapter = { path = "crates/vntype-adapter" }
 arrayvec = { version = "0.7.8", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 unicode-normalization = { version = "0.1.26", default-features = false }
