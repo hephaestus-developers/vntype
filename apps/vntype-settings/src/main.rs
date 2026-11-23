@@ -36,9 +36,9 @@ fn attach_parent_console_if_needed(has_cli_args: bool) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let is_cli = args.iter().any(|a| {
-        matches!(a.as_str(), "--help" | "-h" | "--version" | "-V" | "--print" | "--set-method")
-    });
+    let is_cli = args
+        .iter()
+        .any(|a| matches!(a.as_str(), "--help" | "-h" | "--version" | "-V" | "--print" | "--set-method"));
     attach_parent_console_if_needed(is_cli);
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -118,4 +118,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-

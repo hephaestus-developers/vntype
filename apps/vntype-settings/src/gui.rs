@@ -176,9 +176,7 @@ pub mod win_gui {
     fn setup_vietnamese_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
         if let Ok(bytes) = std::fs::read(r"C:\Windows\Fonts\segoeui.ttf") {
-            fonts
-                .font_data
-                .insert("segoe_ui".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
+            fonts.font_data.insert("segoe_ui".to_owned(), Arc::new(egui::FontData::from_owned(bytes)));
             fonts
                 .families
                 .entry(egui::FontFamily::Proportional)
@@ -214,27 +212,23 @@ pub mod win_gui {
         visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(235, 243, 251);
         visuals.widgets.hovered.bg_stroke =
             egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(0, 103, 192));
-        visuals.widgets.hovered.fg_stroke =
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(16, 16, 16));
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(16, 16, 16));
 
         visuals.widgets.active.bg_fill = egui::Color32::from_rgb(220, 234, 248);
         visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(220, 234, 248);
-        visuals.widgets.active.bg_stroke =
-            egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(0, 90, 170));
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(0, 90, 170));
 
         ctx.set_visuals(visuals);
 
         let mut style = (*ctx.style()).clone();
         style.spacing.button_padding = egui::vec2(10.0, 5.0);
         style.spacing.item_spacing = egui::vec2(8.0, 7.0);
-        style.text_styles.insert(
-            egui::TextStyle::Body,
-            egui::FontId::new(13.5, egui::FontFamily::Proportional),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Button,
-            egui::FontId::new(13.5, egui::FontFamily::Proportional),
-        );
+        style
+            .text_styles
+            .insert(egui::TextStyle::Body, egui::FontId::new(13.5, egui::FontFamily::Proportional));
+        style
+            .text_styles
+            .insert(egui::TextStyle::Button, egui::FontId::new(13.5, egui::FontFamily::Proportional));
         ctx.set_style(style);
     }
 
@@ -271,14 +265,8 @@ pub mod win_gui {
                 painter.rect_stroke(door, 1.5, egui::Stroke::new(1.6_f32, red), egui::StrokeKind::Inside);
                 let arrow = egui::Stroke::new(1.8_f32, red);
                 painter.line_segment([egui::pos2(c.x - 1.0, c.y), egui::pos2(c.x + 6.5, c.y)], arrow);
-                painter.line_segment(
-                    [egui::pos2(c.x + 3.5, c.y - 3.0), egui::pos2(c.x + 6.5, c.y)],
-                    arrow,
-                );
-                painter.line_segment(
-                    [egui::pos2(c.x + 3.5, c.y + 3.0), egui::pos2(c.x + 6.5, c.y)],
-                    arrow,
-                );
+                painter.line_segment([egui::pos2(c.x + 3.5, c.y - 3.0), egui::pos2(c.x + 6.5, c.y)], arrow);
+                painter.line_segment([egui::pos2(c.x + 3.5, c.y + 3.0), egui::pos2(c.x + 6.5, c.y)], arrow);
             }
             ButtonIcon::Expand | ButtonIcon::Collapse => {
                 let blue = egui::Color32::from_rgb(24, 144, 232);
@@ -339,13 +327,7 @@ pub mod win_gui {
                 visuals.bg_stroke
             };
             let painter = ui.painter();
-            painter.rect(
-                rect,
-                4.0,
-                visuals.bg_fill,
-                stroke,
-                egui::StrokeKind::Inside,
-            );
+            painter.rect(rect, 4.0, visuals.bg_fill, stroke, egui::StrokeKind::Inside);
             let icon_rect = egui::Rect::from_center_size(
                 egui::pos2(rect.left() + 18.0, rect.center().y),
                 egui::vec2(16.0, 16.0),
@@ -356,10 +338,7 @@ pub mod win_gui {
                 egui::FontId::new(13.5, egui::FontFamily::Proportional),
                 visuals.text_color(),
             );
-            let text_pos = egui::pos2(
-                rect.left() + 34.0,
-                rect.center().y - galley.size().y / 2.0,
-            );
+            let text_pos = egui::pos2(rect.left() + 34.0, rect.center().y - galley.size().y / 2.0);
             painter.galley(text_pos, galley, visuals.text_color());
         }
         response
@@ -417,9 +396,7 @@ pub mod win_gui {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(title)
-                                .strong()
-                                .color(egui::Color32::from_rgb(45, 45, 45)),
+                            egui::RichText::new(title).strong().color(egui::Color32::from_rgb(45, 45, 45)),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), header_right);
                     });
@@ -430,7 +407,12 @@ pub mod win_gui {
             .response
     }
 
-    fn section_card(ui: &mut egui::Ui, title: &str, outer_width: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
+    fn section_card(
+        ui: &mut egui::Ui,
+        title: &str,
+        outer_width: f32,
+        add_contents: impl FnOnce(&mut egui::Ui),
+    ) {
         let _ = section_card_with_header(ui, title, outer_width, |_| {}, add_contents);
     }
 
@@ -537,118 +519,135 @@ pub mod win_gui {
                                 ui.label(egui::RichText::new(status_text).color(status_color).strong());
                             },
                             |ui| {
-                            egui::Grid::new("vntype_main_grid")
-                                .num_columns(2)
-                                .spacing([14.0, 8.0])
-                                .show(ui, |ui| {
-                                    ui.label(if vi { "Bảng mã:" } else { "Character set:" });
-                                    let unicode_label = match self.vm.draft.unicode_form {
-                                        UnicodeForm::Nfc => {
-                                            if vi { "Unicode dựng sẵn (NFC)" } else { "Unicode (NFC)" }
-                                        }
-                                        UnicodeForm::Nfd => {
-                                            if vi { "Unicode tổ hợp (NFD)" } else { "Unicode (NFD)" }
-                                        }
-                                    };
-                                    egui::ComboBox::from_id_salt("unicode_form")
-                                        .width(248.0)
-                                        .selected_text(unicode_label)
-                                        .show_ui(ui, |ui| {
-                                            if ui
-                                                .selectable_value(
-                                                    &mut self.vm.draft.unicode_form,
-                                                    UnicodeForm::Nfc,
-                                                    if vi {
-                                                        "Unicode dựng sẵn (NFC)"
-                                                    } else {
-                                                        "Unicode (NFC)"
-                                                    },
-                                                )
-                                                .changed()
-                                            {
-                                                changed = true;
-                                            }
-                                            if ui
-                                                .selectable_value(
-                                                    &mut self.vm.draft.unicode_form,
-                                                    UnicodeForm::Nfd,
-                                                    if vi {
-                                                        "Unicode tổ hợp (NFD)"
-                                                    } else {
-                                                        "Unicode (NFD)"
-                                                    },
-                                                )
-                                                .changed()
-                                            {
-                                                changed = true;
-                                            }
-                                        });
-                                    ui.end_row();
-
-                                    ui.label(if vi { "Kiểu gõ:" } else { "Input method:" });
-                                    let method_label = match self.vm.draft.input_method.as_str() {
-                                        "simple_telex" => {
-                                            if vi { "Telex giản lược" } else { "Simple Telex" }
-                                        }
-                                        "vni" => "VNI",
-                                        "viqr" => "VIQR",
-                                        _ => "Telex",
-                                    };
-                                    egui::ComboBox::from_id_salt("input_method")
-                                        .width(248.0)
-                                        .selected_text(method_label)
-                                        .show_ui(ui, |ui| {
-                                            let items = [
-                                                ("telex", "Telex"),
-                                                (
-                                                    "simple_telex",
-                                                    if vi { "Telex giản lược" } else { "Simple Telex" },
-                                                ),
-                                                ("vni", "VNI"),
-                                                ("viqr", "VIQR"),
-                                            ];
-                                            for (val, label) in items {
-                                                if ui
-                                                    .selectable_label(
-                                                        self.vm.draft.input_method == val,
-                                                        label,
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    self.vm.set_input_method(val);
-                                                    changed = true;
+                                egui::Grid::new("vntype_main_grid")
+                                    .num_columns(2)
+                                    .spacing([14.0, 8.0])
+                                    .show(ui, |ui| {
+                                        ui.label(if vi { "Bảng mã:" } else { "Character set:" });
+                                        let unicode_label = match self.vm.draft.unicode_form {
+                                            UnicodeForm::Nfc => {
+                                                if vi {
+                                                    "Unicode dựng sẵn (NFC)"
+                                                } else {
+                                                    "Unicode (NFC)"
                                                 }
                                             }
-                                        });
-                                    ui.end_row();
+                                            UnicodeForm::Nfd => {
+                                                if vi {
+                                                    "Unicode tổ hợp (NFD)"
+                                                } else {
+                                                    "Unicode (NFD)"
+                                                }
+                                            }
+                                        };
+                                        egui::ComboBox::from_id_salt("unicode_form")
+                                            .width(248.0)
+                                            .selected_text(unicode_label)
+                                            .show_ui(ui, |ui| {
+                                                if ui
+                                                    .selectable_value(
+                                                        &mut self.vm.draft.unicode_form,
+                                                        UnicodeForm::Nfc,
+                                                        if vi {
+                                                            "Unicode dựng sẵn (NFC)"
+                                                        } else {
+                                                            "Unicode (NFC)"
+                                                        },
+                                                    )
+                                                    .changed()
+                                                {
+                                                    changed = true;
+                                                }
+                                                if ui
+                                                    .selectable_value(
+                                                        &mut self.vm.draft.unicode_form,
+                                                        UnicodeForm::Nfd,
+                                                        if vi {
+                                                            "Unicode tổ hợp (NFD)"
+                                                        } else {
+                                                            "Unicode (NFD)"
+                                                        },
+                                                    )
+                                                    .changed()
+                                                {
+                                                    changed = true;
+                                                }
+                                            });
+                                        ui.end_row();
 
-                                    ui.label(if vi { "Phím chuyển:" } else { "Switch key:" });
-                                    ui.horizontal(|ui| {
-                                        if ui
-                                            .radio_value(
-                                                &mut self.vm.draft.switch_key,
-                                                SwitchKey::AltComma,
-                                                "Alt + ,",
-                                            )
-                                            .changed()
-                                        {
-                                            changed = true;
-                                        }
-                                        ui.add_space(12.0);
-                                        if ui
-                                            .radio_value(
-                                                &mut self.vm.draft.switch_key,
-                                                SwitchKey::AltZ,
-                                                "Alt + Z",
-                                            )
-                                            .changed()
-                                        {
-                                            changed = true;
-                                        }
+                                        ui.label(if vi { "Kiểu gõ:" } else { "Input method:" });
+                                        let method_label = match self.vm.draft.input_method.as_str() {
+                                            "simple_telex" => {
+                                                if vi {
+                                                    "Telex giản lược"
+                                                } else {
+                                                    "Simple Telex"
+                                                }
+                                            }
+                                            "vni" => "VNI",
+                                            "viqr" => "VIQR",
+                                            _ => "Telex",
+                                        };
+                                        egui::ComboBox::from_id_salt("input_method")
+                                            .width(248.0)
+                                            .selected_text(method_label)
+                                            .show_ui(ui, |ui| {
+                                                let items = [
+                                                    ("telex", "Telex"),
+                                                    (
+                                                        "simple_telex",
+                                                        if vi {
+                                                            "Telex giản lược"
+                                                        } else {
+                                                            "Simple Telex"
+                                                        },
+                                                    ),
+                                                    ("vni", "VNI"),
+                                                    ("viqr", "VIQR"),
+                                                ];
+                                                for (val, label) in items {
+                                                    if ui
+                                                        .selectable_label(
+                                                            self.vm.draft.input_method == val,
+                                                            label,
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        self.vm.set_input_method(val);
+                                                        changed = true;
+                                                    }
+                                                }
+                                            });
+                                        ui.end_row();
+
+                                        ui.label(if vi { "Phím chuyển:" } else { "Switch key:" });
+                                        ui.horizontal(|ui| {
+                                            if ui
+                                                .radio_value(
+                                                    &mut self.vm.draft.switch_key,
+                                                    SwitchKey::AltComma,
+                                                    "Alt + ,",
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                            ui.add_space(12.0);
+                                            if ui
+                                                .radio_value(
+                                                    &mut self.vm.draft.switch_key,
+                                                    SwitchKey::AltZ,
+                                                    "Alt + Z",
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                        });
+                                        ui.end_row();
                                     });
-                                    ui.end_row();
-                                });
-                        });
+                            },
+                        );
 
                         let card_h = ctrl_resp.rect.height();
                         ui.add_space(4.0);

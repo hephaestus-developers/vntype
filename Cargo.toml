@@ -41,7 +41,7 @@ windows = "0.62.2"
 windows-core = "0.62.2"
 windows-implement = "0.60.2"
 windows-sys = "0.61.2"
-eframe = { version = "0.31.1", default-features = false, features = ["glow", "default_fonts"] }
+eframe = { version = "0.31.1", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
 
 [profile.release]
 lto = true

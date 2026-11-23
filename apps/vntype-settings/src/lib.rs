@@ -4,9 +4,7 @@ pub mod gui;
 
 use std::path::PathBuf;
 
-use vntype_config::{
-    Config, ConfigError, ToneStyle, load_config_or_default, save_config_atomic,
-};
+use vntype_config::{Config, ConfigError, ToneStyle, load_config_or_default, save_config_atomic};
 use vntype_core::InputMethodSpec;
 
 /// Bộ điều khiển trạng thái giao diện cấu hình (ViewModel), hỗ trợ kiểm tra hợp lệ và lưu nguyên tử.

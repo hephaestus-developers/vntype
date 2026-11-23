@@ -113,9 +113,8 @@ pub mod win_hook {
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, GetKeyboardState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-        KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, SendInput, ToUnicode, VK_BACK, VK_CONTROL, VK_LWIN,
-        VK_MENU, VK_RWIN,
+        GetAsyncKeyState, GetKeyboardState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+        KEYEVENTF_UNICODE, SendInput, ToUnicode, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
@@ -379,7 +378,8 @@ pub mod win_hook {
 
         let kb = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
         let msg = wparam as u32;
-        if (kb.flags & LLKHF_INJECTED) == 0 && (kb.vkCode == VK_LWIN as u32 || kb.vkCode == VK_RWIN as u32) {
+        if (kb.flags & LLKHF_INJECTED) == 0 && (kb.vkCode == VK_LWIN as u32 || kb.vkCode == VK_RWIN as u32)
+        {
             let is_down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
             let is_up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
             if is_down {
@@ -411,9 +411,7 @@ pub mod win_hook {
                     SwitchKey::AltComma => {
                         kb.vkCode == VK_OEM_COMMA && event.alt && !event.ctrl && !event.meta
                     }
-                    SwitchKey::AltZ => {
-                        kb.vkCode == VK_Z && event.alt && !event.ctrl && !event.meta
-                    }
+                    SwitchKey::AltZ => kb.vkCode == VK_Z && event.alt && !event.ctrl && !event.meta,
                 };
             if is_switch_hotkey {
                 let next = !rt.processor.is_enabled();

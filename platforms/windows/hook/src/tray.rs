@@ -56,8 +56,8 @@ pub mod win_tray {
         AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
         DestroyMenu, DestroyWindow, GetCursorPos, HICON, ICONINFO, IDI_APPLICATION, LoadIconW, MF_CHECKED,
         MF_SEPARATOR, MF_STRING, MF_UNCHECKED, PostMessageW, PostQuitMessage, RegisterClassW,
-        SetForegroundWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
-        TrackPopupMenu, WM_APP, WM_HOTKEY, WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW,
+        SetForegroundWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenu,
+        WM_APP, WM_HOTKEY, WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW,
     };
 
     use vntype_config::SwitchKey;
@@ -146,24 +146,13 @@ pub mod win_tray {
             SetBkMode(mem_dc, TRANSPARENT as i32);
             SetTextColor(mem_dc, fg_color);
             let text = to_wide(letter);
-            DrawTextW(
-                mem_dc,
-                text.as_ptr(),
-                -1,
-                &mut rect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-            );
+            DrawTextW(mem_dc, text.as_ptr(), -1, &mut rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
             SelectObject(mem_dc, old_font);
             SelectObject(mem_dc, old_bmp);
 
-            let ii = ICONINFO {
-                fIcon: 1,
-                xHotspot: 0,
-                yHotspot: 0,
-                hbmMask: mask_bmp,
-                hbmColor: color_bmp,
-            };
+            let ii =
+                ICONINFO { fIcon: 1, xHotspot: 0, yHotspot: 0, hbmMask: mask_bmp, hbmColor: color_bmp };
             let icon = CreateIconIndirect(&ii);
 
             DeleteObject(font);
@@ -172,11 +161,7 @@ pub mod win_tray {
             DeleteDC(mem_dc);
             ReleaseDC(core::ptr::null_mut(), screen_dc);
 
-            if icon.is_null() {
-                LoadIconW(core::ptr::null_mut(), IDI_APPLICATION)
-            } else {
-                icon
-            }
+            if icon.is_null() { LoadIconW(core::ptr::null_mut(), IDI_APPLICATION) } else { icon }
         }
     }
 
@@ -268,12 +253,7 @@ pub mod win_tray {
             };
             unsafe {
                 UnregisterHotKey(self.hwnd, HOTKEY_SWITCH_ID);
-                let ok = RegisterHotKey(
-                    self.hwnd,
-                    HOTKEY_SWITCH_ID,
-                    MOD_ALT | MOD_NOREPEAT,
-                    vk,
-                ) != 0;
+                let ok = RegisterHotKey(self.hwnd, HOTKEY_SWITCH_ID, MOD_ALT | MOD_NOREPEAT, vk) != 0;
                 HOTKEY_REGISTERED.store(ok, Ordering::Release);
             }
         }

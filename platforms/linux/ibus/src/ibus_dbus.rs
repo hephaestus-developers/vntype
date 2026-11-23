@@ -26,17 +26,54 @@ pub struct IbusText {
 }
 
 impl IbusText {
-    /// Tạo một [`IbusText`] mới từ chuỗi văn bản `text`.
+    /// Tạo một [`IbusText`] mới từ chuỗi văn bản `text` (không kèm thuộc tính định dạng).
     pub fn new(text: impl Into<String>) -> Self {
+        Self::with_attrs(text, Vec::new())
+    }
+
+    /// Tạo một [`IbusText`] mới kèm gạch chân đơn (`IBUS_ATTR_TYPE_UNDERLINE`) cho toàn bộ chuỗi preedit.
+    pub fn with_underline(text: impl Into<String>) -> Self {
+        let s: String = text.into();
+        let char_len = s.chars().count() as u32;
+        let attrs = if char_len > 0 {
+            let attr = Structure::builder()
+                .add_field("IBusAttribute")
+                .add_field(HashMap::<String, Variant>::new())
+                .add_field(1u32) // IBUS_ATTR_TYPE_UNDERLINE
+                .add_field(1u32) // IBUS_ATTR_UNDERLINE_SINGLE
+                .add_field(0u32)
+                .add_field(char_len)
+                .build()
+                .expect("tạo IBusAttribute hợp lệ");
+            vec![Variant::from(attr)]
+        } else {
+            Vec::new()
+        };
+        Self::with_attrs(s, attrs)
+    }
+
+    fn with_attrs(text: impl Into<String>, attr_items: Vec<Variant>) -> Self {
         let attr_list = Structure::builder()
             .add_field("IBusAttrList")
             .add_field(HashMap::<String, Variant>::new())
-            .add_field(Vec::<Variant>::new())
+            .add_field(attr_items)
             .build()
             .expect("tạo IBusAttrList hợp lệ");
         let attrs = OwnedVariant::try_from(Variant::from(attr_list))
             .expect("chuyển IBusAttrList sang OwnedVariant");
         IbusText { name: "IBusText".into(), attachments: HashMap::new(), text: text.into(), attrs }
+    }
+
+    /// Đóng gói `IbusText` thành `OwnedVariant` (`v`) đúng chuẩn tín hiệu D-Bus của IBus.
+    pub fn into_variant(self) -> OwnedVariant {
+        let s = Structure::builder()
+            .add_field(self.name)
+            .add_field(self.attachments)
+            .add_field(self.text)
+            .add_field(self.attrs)
+            .build()
+            .expect("tạo cấu trúc IBusText hợp lệ");
+        OwnedVariant::try_from(Variant::from(s)).expect("chuyển IBusText sang OwnedVariant")
     }
 
     /// Trích xuất chuỗi văn bản từ một [`struct@OwnedVariant`] kiểu `IBusText` nhận qua D-Bus.
@@ -123,7 +160,9 @@ impl DbusEngine {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         self.send_cmd(EngineCmd::FocusIn { app: None, reply: reply_tx })?;
         let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await
+        emit_signals(&emitter, signals).await?;
+        let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        Ok(())
     }
 
     async fn focus_in_id(
@@ -135,7 +174,9 @@ impl DbusEngine {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         self.send_cmd(EngineCmd::FocusIn { app: Some(client.to_string()), reply: reply_tx })?;
         let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await
+        emit_signals(&emitter, signals).await?;
+        let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        Ok(())
     }
 
     async fn focus_out(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
@@ -160,9 +201,20 @@ impl DbusEngine {
         emit_signals(&emitter, signals).await
     }
 
-    fn enable(&self) {}
+    async fn enable(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
+        let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        Ok(())
+    }
 
     fn disable(&self) {}
+
+    fn set_capabilities(&self, _caps: u32) {}
+
+    fn set_cursor_location(&self, _x: i32, _y: i32, _w: i32, _h: i32) {}
+
+    fn set_cursor_location_relative(&self, _x: i32, _y: i32, _w: i32, _h: i32) {}
+
+    fn property_activate(&self, _name: &str, _state: u32) {}
 
     fn set_surrounding_text(&self, text: OwnedVariant, cursor_pos: u32, anchor_pos: u32) {
         if let Some(s) = IbusText::extract_text(&text) {
@@ -191,16 +243,17 @@ impl DbusEngine {
     #[zbus(signal)]
     async fn update_preedit_text(
         emitter: &SignalEmitter<'_>,
-        text: IbusText,
+        text: OwnedVariant,
         cursor_pos: u32,
         visible: bool,
+        mode: u32,
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
     async fn hide_preedit_text(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn commit_text(emitter: &SignalEmitter<'_>, text: IbusText) -> zbus::Result<()>;
+    async fn commit_text(emitter: &SignalEmitter<'_>, text: OwnedVariant) -> zbus::Result<()>;
 
     #[zbus(signal)]
     async fn delete_surrounding_text(
@@ -216,16 +269,42 @@ impl DbusEngine {
         keycode: u32,
         state: u32,
     ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn require_surrounding_text(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+}
+
+fn utf16_offset_to_chars(text: &str, utf16_off: u32) -> u32 {
+    let mut u16_acc = 0u32;
+    let mut chars = 0u32;
+    for ch in text.chars() {
+        if u16_acc >= utf16_off {
+            break;
+        }
+        u16_acc += ch.len_utf16() as u32;
+        chars += 1;
+    }
+    chars
 }
 
 async fn emit_signals(emitter: &SignalEmitter<'_>, signals: Vec<IbusSignal>) -> zbus::fdo::Result<()> {
     for sig in signals {
         let res = match sig {
             IbusSignal::UpdatePreeditText { text, cursor_utf16, visible } => {
-                DbusEngine::update_preedit_text(emitter, IbusText::new(text), cursor_utf16, visible).await
+                let cursor_chars = utf16_offset_to_chars(&text, cursor_utf16);
+                DbusEngine::update_preedit_text(
+                    emitter,
+                    IbusText::with_underline(text).into_variant(),
+                    cursor_chars,
+                    visible,
+                    0, // IBUS_ENGINE_PREEDIT_CLEAR
+                )
+                .await
             }
             IbusSignal::HidePreeditText => DbusEngine::hide_preedit_text(emitter).await,
-            IbusSignal::CommitText { text } => DbusEngine::commit_text(emitter, IbusText::new(text)).await,
+            IbusSignal::CommitText { text } => {
+                DbusEngine::commit_text(emitter, IbusText::new(text).into_variant()).await
+            }
             IbusSignal::DeleteSurroundingText { offset_chars, nchars } => {
                 DbusEngine::delete_surrounding_text(emitter, offset_chars, nchars).await
             }
@@ -331,17 +410,11 @@ mod tests {
 
     #[test]
     fn ibus_text_roundtrip_wire_value() {
-        let t = IbusText::new("tiếng Việt");
-        let val = OwnedVariant::try_from(Variant::from(
-            Structure::builder()
-                .add_field(t.name)
-                .add_field(t.attachments)
-                .add_field(t.text)
-                .add_field(t.attrs)
-                .build()
-                .unwrap(),
-        ))
-        .unwrap();
+        let val = IbusText::new("tiếng Việt").into_variant();
         assert_eq!(IbusText::extract_text(&val).as_deref(), Some("tiếng Việt"));
+
+        let underlined = IbusText::with_underline("tiếng").into_variant();
+        assert_eq!(IbusText::extract_text(&underlined).as_deref(), Some("tiếng"));
+        assert_eq!(utf16_offset_to_chars("😀a", 3), 2);
     }
 }

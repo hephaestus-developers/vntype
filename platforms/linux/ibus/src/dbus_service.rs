@@ -7,7 +7,7 @@ use vntype_adapter::{AdapterController, Effect, char_to_utf16_offset};
 use vntype_config::load_config_or_default;
 use vntype_engine::{FieldKind, OutputMode};
 
-use crate::keymap::translate_ibus_key;
+use crate::keymap::{IBUS_RELEASE_MASK, translate_ibus_key};
 
 /// Tín hiệu đầu ra phát từ dịch vụ IBus Engine xuống IBus Daemon qua D-Bus.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +52,7 @@ pub struct IbusEngineService {
     config_path: PathBuf,
     config_mtime: Option<SystemTime>,
     signals: Vec<IbusSignal>,
+    holding_eaten_backspace: bool,
 }
 
 impl IbusEngineService {
@@ -64,6 +65,7 @@ impl IbusEngineService {
             config_path,
             config_mtime: mtime,
             signals: Vec::new(),
+            holding_eaten_backspace: false,
         }
     }
 
@@ -76,12 +78,24 @@ impl IbusEngineService {
     ///
     /// Trả về `true` nếu phím đã được bộ gõ tiêu thụ, `false` nếu trả phím về cho ứng dụng.
     pub fn process_key_event(&mut self, keyval: u32, keycode: u32, state: u32) -> bool {
+        if keyval == 0xff08 && (state & IBUS_RELEASE_MASK) != 0 {
+            self.holding_eaten_backspace = false;
+            return false;
+        }
         let Some(ev) = translate_ibus_key(keyval, state) else {
             return false;
         };
         self.reload_config_if_needed();
         let effects = self.controller.process_key(ev, keyval);
-        self.apply_effects(effects, keycode, state)
+        let handled = self.apply_effects(effects, keyval, keycode, state);
+        if keyval == 0xff08 {
+            if handled {
+                self.holding_eaten_backspace = true;
+            }
+        } else {
+            self.holding_eaten_backspace = false;
+        }
+        handled
     }
 
     /// Xử lý tín hiệu `SetSurroundingText(text, cursor_chars, anchor_chars)` từ IBus.
@@ -107,19 +121,21 @@ impl IbusEngineService {
             _ => FieldKind::Text,
         };
         let effects = self.controller.set_field_kind(kind);
-        self.apply_effects(effects, 0, 0);
+        self.apply_effects(effects, 0, 0, 0);
     }
 
     /// Xử lý sự kiện nhận tiêu điểm `FocusIn(app_id)`.
     pub fn focus_in(&mut self, app_id: Option<&str>) {
+        self.holding_eaten_backspace = false;
         let effects = self.controller.focus_changed(app_id);
-        self.apply_effects(effects, 0, 0);
+        self.apply_effects(effects, 0, 0, 0);
     }
 
     /// Xử lý sự kiện mất tiêu điểm `FocusOut()`.
     pub fn focus_out(&mut self) {
+        self.holding_eaten_backspace = false;
         let effects = self.controller.flush();
-        self.apply_effects(effects, 0, 0);
+        self.apply_effects(effects, 0, 0, 0);
     }
 
     /// Xử lý sự kiện `Reset()` từ IBus.
@@ -135,7 +151,7 @@ impl IbusEngineService {
         self.signals.push(IbusSignal::HidePreeditText);
     }
 
-    fn apply_effects(&mut self, effects: Vec<Effect>, keycode: u32, state: u32) -> bool {
+    fn apply_effects(&mut self, effects: Vec<Effect>, keyval: u32, keycode: u32, state: u32) -> bool {
         let mut forward_original = false;
         for eff in effects {
             match eff {
@@ -166,8 +182,14 @@ impl IbusEngineService {
                 }
             }
         }
-        if forward_original && keycode != 0 {
-            let _ = state;
+        if forward_original && keyval == 0xff08 && self.holding_eaten_backspace && keycode != 0 {
+            self.signals.push(IbusSignal::ForwardKeyEvent { keyval, keycode, state });
+            self.signals.push(IbusSignal::ForwardKeyEvent {
+                keyval,
+                keycode,
+                state: state | IBUS_RELEASE_MASK,
+            });
+            return true;
         }
         !forward_original
     }
@@ -182,7 +204,7 @@ impl IbusEngineService {
             if let Ok(json) = std::fs::read_to_string(&self.config_path)
                 && let Some(effects) = self.controller.apply_config_json(&json)
             {
-                self.apply_effects(effects, 0, 0);
+                self.apply_effects(effects, 0, 0, 0);
             }
         }
     }
@@ -232,5 +254,34 @@ mod tests {
         assert!(!svc.process_key_event(b'a' as u32, 30, 0));
 
         svc.focus_out();
+    }
+
+    #[test]
+    fn held_backspace_forwards_synthetic_repeats_after_word_cleared() {
+        let mut svc = IbusEngineService::new(PathBuf::from("/nonexistent/config.json"));
+        for b in b"ba" {
+            assert!(svc.process_key_event(*b as u32, 0, 0));
+        }
+        let _ = svc.drain_signals();
+
+        // Xoá hết từ đang gõ bằng giữ phím Backspace (keycode = 14)
+        assert!(svc.process_key_event(0xff08, 14, 0));
+        assert!(svc.process_key_event(0xff08, 14, 0));
+        let _ = svc.drain_signals();
+
+        // Lần lặp tiếp theo khi từ đã trống phải phát ForwardKeyEvent để tránh kẹt auto-repeat
+        assert!(svc.process_key_event(0xff08, 14, 0));
+        let sigs = svc.drain_signals();
+        assert_eq!(
+            sigs,
+            vec![
+                IbusSignal::ForwardKeyEvent { keyval: 0xff08, keycode: 14, state: 0 },
+                IbusSignal::ForwardKeyEvent { keyval: 0xff08, keycode: 14, state: IBUS_RELEASE_MASK },
+            ]
+        );
+
+        // Nhả phím Backspace -> lần nhấn mới trả về false để app tự xử lý bình thường
+        assert!(!svc.process_key_event(0xff08, 14, IBUS_RELEASE_MASK));
+        assert!(!svc.process_key_event(0xff08, 14, 0));
     }
 }

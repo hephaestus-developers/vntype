@@ -193,9 +193,11 @@ pub mod win_edit_session {
 
             unsafe {
                 if let Ok(insert_at_sel) = self.context.cast::<ITfInsertAtSelection>() {
-                    if let Ok(range) =
-                        insert_at_sel.InsertTextAtSelection(self.ec, INSERT_TEXT_AT_SELECTION_FLAGS(0), &utf16)
-                    {
+                    if let Ok(range) = insert_at_sel.InsertTextAtSelection(
+                        self.ec,
+                        INSERT_TEXT_AT_SELECTION_FLAGS(0),
+                        &utf16,
+                    ) {
                         self.set_caret_to_range_end(&range);
                     }
                 }

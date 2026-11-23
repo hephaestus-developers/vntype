@@ -16,10 +16,10 @@
             <author>Hephaestus Developers</author>
             <icon>vntype</icon>
             <layout>default</layout>
-            <longname>VNType (Tiếng Việt)</longname>
-            <description>Bộ gõ Tiếng Việt hiệu năng cao</description>
+            <longname>VNType</longname>
+            <description>Bộ gõ Tiếng Việt</description>
             <rank>99</rank>
-            <symbol>VN</symbol>
+            <symbol>vi</symbol>
         </engine>
     </engines>
 </component>
