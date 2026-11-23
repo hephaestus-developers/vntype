@@ -1,8 +1,4 @@
 //! Thư viện In-Process COM DLL (`vntype_tsf.dll`) của VNType trên Windows.
-//!
-//! Khác với kiến trúc cũ tách rời `vifastkey_tsf.dll` (C++) và `vifastkey.dll` (Rust) dễ gây lỗi
-//! thứ tự tìm kiếm thư viện (`DLL Search Order`) khi nạp vào tiến trình ứng dụng, crate này
-//! nhúng tĩnh toàn bộ `vntype-adapter` và `vntype-engine` vào trong một tệp `vntype_tsf.dll` duy nhất.
 
 pub mod composition;
 pub mod edit_session;
