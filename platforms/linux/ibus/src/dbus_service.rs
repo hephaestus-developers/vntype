@@ -4,13 +4,13 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use vntype_adapter::{AdapterController, Effect, char_to_utf16_offset};
-use vntype_config::load_config_or_default;
-use vntype_engine::{FieldKind, OutputMode};
+use vntype_config::{Config, ToneStyle, UnicodeForm, load_config_or_default, save_config_atomic};
+use vntype_engine::{FieldKind, Key, OutputMode};
 
 use crate::keymap::{IBUS_RELEASE_MASK, translate_ibus_key};
 
 /// Tín hiệu đầu ra phát từ dịch vụ IBus Engine xuống IBus Daemon qua D-Bus.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IbusSignal {
     /// Cập nhật chuỗi gạch chân (`UpdatePreeditText(text, cursor_utf16, visible)`).
     UpdatePreeditText {
@@ -43,6 +43,18 @@ pub enum IbusSignal {
         keycode: u32,
         /// Cờ trạng thái modifier.
         state: u32,
+    },
+    /// Đăng ký toàn bộ menu thuộc tính (`RegisterProperties`) với IBus.
+    RegisterMenu {
+        /// Ảnh chụp cấu hình hiện tại.
+        config: Box<Config>,
+    },
+    /// Cập nhật trạng thái menu thuộc tính (`UpdateProperty`) khi người dùng đổi cấu hình.
+    UpdateMenu {
+        /// Khoá thuộc tính vừa được kích hoạt.
+        changed_key: String,
+        /// Ảnh chụp cấu hình hiện tại.
+        config: Box<Config>,
     },
 }
 
@@ -85,6 +97,10 @@ impl IbusEngineService {
         let Some(ev) = translate_ibus_key(keyval, state) else {
             return false;
         };
+        if ev.alt && !ev.ctrl && !ev.meta && ev.key == Key::Char(',') {
+            self.holding_eaten_backspace = false;
+            return false;
+        }
         self.reload_config_if_needed();
         let effects = self.controller.process_key(ev, keyval);
         let handled = self.apply_effects(effects, keyval, keycode, state);
@@ -124,11 +140,72 @@ impl IbusEngineService {
         self.apply_effects(effects, 0, 0, 0);
     }
 
+    /// Trả về kiểu gõ hiện tại đang cấu hình trong engine.
+    pub fn input_method(&self) -> String {
+        self.controller.session().config().input_method.to_ascii_lowercase()
+    }
+
+    /// Trả về bản sao cấu hình hiện tại trong engine.
+    pub fn current_config(&self) -> Config {
+        self.controller.session().config().clone()
+    }
+
+    /// Phát tín hiệu đăng ký menu thuộc tính IBus (`RegisterProperties`).
+    pub fn emit_register_menu(&mut self) {
+        self.signals.push(IbusSignal::RegisterMenu { config: Box::new(self.current_config()) });
+    }
+
+    /// Xử lý sự kiện người dùng chọn một mục trong menu IBus (`PropertyActivate(name, state)`).
+    pub fn property_activate(&mut self, name: &str, state: u32) {
+        let mut cfg = self.current_config();
+        let checked = state != 0;
+        let mut changed = true;
+
+        match name {
+            "vntype.im.telex" if checked => cfg.input_method = "telex".into(),
+            "vntype.im.vni" if checked => cfg.input_method = "vni".into(),
+            "vntype.im.simple_telex" if checked => cfg.input_method = "simple_telex".into(),
+            "vntype.im.viqr" if checked => cfg.input_method = "viqr".into(),
+            "vntype.charset.nfc" if checked => cfg.unicode_form = UnicodeForm::Nfc,
+            "vntype.charset.nfd" if checked => cfg.unicode_form = UnicodeForm::Nfd,
+            "vntype.tone.new" if checked => cfg.tone_style = ToneStyle::New,
+            "vntype.tone.old" if checked => cfg.tone_style = ToneStyle::Old,
+            "vntype.opt.spell_check" => cfg.spell_check = checked,
+            "vntype.opt.w_as_u" => cfg.w_as_u = checked,
+            "vntype.opt.bracket_keys" => cfg.bracket_keys = checked,
+            "vntype.opt.quick_telex" => cfg.quick_telex = checked,
+            "vntype.opt.allow_coda_k" => cfg.allow_coda_k = checked,
+            "vntype.opt.edit_previous_word" => cfg.edit_previous_word = checked,
+            "vntype.opt.restore_after_space" => cfg.restore_after_space = checked,
+            "vntype.opt.auto_capitalize" => cfg.auto_capitalize = checked,
+            "vntype.opt.smart_caps" => cfg.smart_caps = checked,
+            "vntype.macro.enabled" => cfg.macro_enabled = checked,
+            "vntype.macro.undo" => cfg.macro_undo = checked,
+            "vntype.macro.digits" => cfg.macro_digits = checked,
+            "vntype.macro.in_off_mode" => cfg.macro_in_off_mode = checked,
+            _ => changed = false,
+        }
+
+        if !changed {
+            return;
+        }
+
+        let _ = save_config_atomic(&self.config_path, &cfg);
+        if let Ok(json) = serde_json::to_string(&cfg)
+            && let Some(effects) = self.controller.apply_config_json(&json)
+        {
+            self.apply_effects(effects, 0, 0, 0);
+        }
+        self.config_mtime = std::fs::metadata(&self.config_path).and_then(|m| m.modified()).ok();
+        self.signals.push(IbusSignal::UpdateMenu { changed_key: name.to_string(), config: Box::new(cfg) });
+    }
+
     /// Xử lý sự kiện nhận tiêu điểm `FocusIn(app_id)`.
     pub fn focus_in(&mut self, app_id: Option<&str>) {
         self.holding_eaten_backspace = false;
         let effects = self.controller.focus_changed(app_id);
         self.apply_effects(effects, 0, 0, 0);
+        self.emit_register_menu();
     }
 
     /// Xử lý sự kiện mất tiêu điểm `FocusOut()`.
@@ -283,5 +360,31 @@ mod tests {
         // Nhả phím Backspace -> lần nhấn mới trả về false để app tự xử lý bình thường
         assert!(!svc.process_key_event(0xff08, 14, IBUS_RELEASE_MASK));
         assert!(!svc.process_key_event(0xff08, 14, 0));
+    }
+
+    #[test]
+    fn property_activate_updates_method_charset_options_and_ignores_alt_comma() {
+        let tmp = std::env::temp_dir().join(format!("vntype_ibus_prop_{}.json", std::process::id()));
+        let mut svc = IbusEngineService::new(tmp.clone());
+
+        // Alt+, không còn bật/tắt chế độ trong vntype-ibus mà đi thẳng qua ứng dụng
+        assert!(!svc.process_key_event(b',' as u32, 0, crate::keymap::IBUS_MOD1_MASK));
+        assert!(svc.drain_signals().is_empty());
+
+        svc.property_activate("vntype.im.vni", 1);
+        svc.property_activate("vntype.charset.nfd", 1);
+        svc.property_activate("vntype.tone.old", 1);
+        svc.property_activate("vntype.opt.w_as_u", 1);
+        svc.property_activate("vntype.macro.enabled", 0);
+
+        let cfg = svc.current_config();
+        assert_eq!(cfg.input_method, "vni");
+        assert_eq!(cfg.unicode_form, UnicodeForm::Nfd);
+        assert_eq!(cfg.tone_style, ToneStyle::Old);
+        assert!(cfg.w_as_u);
+        assert!(!cfg.macro_enabled);
+        assert!(svc.drain_signals().iter().any(|s| matches!(s, IbusSignal::UpdateMenu { .. })));
+
+        let _ = std::fs::remove_file(tmp);
     }
 }

@@ -1,6 +1,5 @@
 //! Giao diện đồ họa hiện đại bằng `eframe`/`egui` cho ứng dụng cấu hình VNType.
 
-#[cfg(windows)]
 pub mod win_gui {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,6 +7,7 @@ pub mod win_gui {
 
     use eframe::egui;
     use vntype_config::{Config, SwitchKey, ToneStyle, UnicodeForm};
+    #[cfg(windows)]
     use vntype_win_ipc::win_shm::SharedRoutingMapping;
 
     use crate::SettingsViewModel;
@@ -45,16 +45,17 @@ pub mod win_gui {
         }
 
         fn wake(&self) {
-            if let Ok(guard) = self.egui_ctx.lock() {
-                if let Some(ctx) = guard.as_ref() {
-                    ctx.request_repaint();
-                }
+            if let Ok(guard) = self.egui_ctx.lock()
+                && let Some(ctx) = guard.as_ref()
+            {
+                ctx.request_repaint();
             }
         }
 
         /// Yêu cầu hiển thị và đưa cửa sổ cấu hình lên phía trước.
         pub fn request_show(&self) {
             self.show_requested.store(true, Ordering::Release);
+            #[cfg(windows)]
             unsafe {
                 let mut title: Vec<u16> =
                     concat!("VNType ", env!("CARGO_PKG_VERSION")).encode_utf16().collect();
@@ -100,6 +101,7 @@ pub mod win_gui {
 
     struct VntypeSettingsApp {
         vm: SettingsViewModel,
+        #[cfg(windows)]
         routing: Option<SharedRoutingMapping>,
         expanded: bool,
         vietnamese_ui: bool,
@@ -121,14 +123,16 @@ pub mod win_gui {
         ) -> Self {
             setup_vietnamese_fonts(&cc.egui_ctx);
             apply_light_windows_theme(&cc.egui_ctx);
-            if let Some(b) = &bridge {
-                if let Ok(mut guard) = b.egui_ctx.lock() {
-                    *guard = Some(cc.egui_ctx.clone());
-                }
+            if let Some(b) = &bridge
+                && let Ok(mut guard) = b.egui_ctx.lock()
+            {
+                *guard = Some(cc.egui_ctx.clone());
             }
+            #[cfg(windows)]
             let routing = SharedRoutingMapping::open_or_create().ok();
             Self {
                 vm,
+                #[cfg(windows)]
                 routing,
                 expanded: false,
                 vietnamese_ui: true,
@@ -142,6 +146,7 @@ pub mod win_gui {
 
         fn save_and_notify(&mut self) {
             if self.vm.apply_and_save().is_ok() {
+                #[cfg(windows)]
                 if let Some(routing) = &self.routing {
                     routing.notify_config_reloaded();
                 }
@@ -468,12 +473,10 @@ pub mod win_gui {
                 }
             }
 
-            if ctx.input(|i| i.viewport().close_requested()) && !self.allow_close {
-                if self.bridge.is_some() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                    return;
-                }
+            if ctx.input(|i| i.viewport().close_requested()) && !self.allow_close && self.bridge.is_some() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                return;
             }
 
             let mut changed = false;
@@ -500,10 +503,10 @@ pub mod win_gui {
                             ctrl_title,
                             392.0,
                             |ui| {
-                                if toggle_switch(ui, vn_enabled).clicked() {
-                                    if let Some(cb) = on_toggle {
-                                        cb();
-                                    }
+                                if toggle_switch(ui, vn_enabled).clicked()
+                                    && let Some(cb) = on_toggle
+                                {
+                                    cb();
                                 }
                                 let status_text = match (vn_enabled, vi) {
                                     (true, true) => "Tiếng Việt (V)",

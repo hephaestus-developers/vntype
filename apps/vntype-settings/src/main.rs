@@ -74,15 +74,7 @@ fn main() {
         return;
     }
 
-    #[cfg(windows)]
-    {
-        vntype_settings::gui::win_gui::run_settings_gui(vm);
-    }
-
-    #[cfg(not(windows))]
-    {
-        println!("VNType Settings ({}) — Kiểu gõ: {}", vm.config_path.display(), vm.draft.input_method);
-    }
+    vntype_settings::gui::win_gui::run_settings_gui(vm);
 }
 
 #[cfg(test)]

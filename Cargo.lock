@@ -2717,6 +2717,7 @@ name = "vntype-ibus"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "vntype-adapter",
  "vntype-config",
  "vntype-engine",

@@ -18,4 +18,5 @@ vntype-config = { workspace = true }
 vntype-engine = { workspace = true }
 vntype-adapter = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 zbus = { workspace = true }
