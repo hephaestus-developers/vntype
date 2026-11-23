@@ -613,6 +613,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vntype-hook"
+version = "0.1.0"
+dependencies = [
+ "vntype-adapter",
+ "vntype-config",
+ "vntype-engine",
+ "vntype-win-ipc",
+]
+
+[[package]]
 name = "vntype-ibus"
 version = "0.1.0"
 dependencies = [
@@ -642,6 +652,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vntype-tsf"
+version = "0.1.0"
+dependencies = [
+ "vntype-adapter",
+ "vntype-config",
+ "vntype-engine",
+ "vntype-win-ipc",
+]
+
+[[package]]
 name = "vntype-wayland"
 version = "0.1.0"
 dependencies = [
@@ -652,6 +672,10 @@ dependencies = [
  "wayland-protocols-misc",
  "xkbcommon",
 ]
+
+[[package]]
+name = "vntype-win-ipc"
+version = "0.1.0"
 
 [[package]]
 name = "wasi"

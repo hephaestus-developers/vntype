@@ -1,0 +1,20 @@
+[package]
+name = "vntype-tsf"
+description = "Thư viện In-Process COM DLL (Windows TSF Text Service) của VNType."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[lib]
+name = "vntype_tsf"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vntype-config = { workspace = true }
+vntype-engine = { workspace = true }
+vntype-adapter = { workspace = true }
+vntype-win-ipc = { workspace = true }

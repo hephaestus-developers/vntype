@@ -1,0 +1,10 @@
+[package]
+name = "vntype-win-ipc"
+description = "Cơ chế đồng bộ liên tiến trình nguyên tử 64-bit giữa Windows TSF và Hook."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true

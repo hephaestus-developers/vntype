@@ -1,0 +1,20 @@
+[package]
+name = "vntype-hook"
+description = "Trình nền Hook bàn phím mức thấp (WH_KEYBOARD_LL), Tray và OSD trên Windows."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vntype-hook"
+path = "src/main.rs"
+
+[dependencies]
+vntype-config = { workspace = true }
+vntype-engine = { workspace = true }
+vntype-adapter = { workspace = true }
+vntype-win-ipc = { workspace = true }

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "apps/*", "platforms/linux/ibus", "platforms/linux/wayland"]
+members = [
+    "crates/*",
+    "apps/*",
+    "platforms/linux/ibus",
+    "platforms/linux/wayland",
+    "platforms/windows/*",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -20,6 +26,7 @@ vntype-config = { path = "crates/vntype-config" }
 vntype-engine = { path = "crates/vntype-engine" }
 vntype-adapter = { path = "crates/vntype-adapter" }
 vntype-ffi = { path = "crates/vntype-ffi" }
+vntype-win-ipc = { path = "platforms/windows/ipc" }
 arrayvec = { version = "0.7.8", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 unicode-normalization = { version = "0.1.26", default-features = false }
