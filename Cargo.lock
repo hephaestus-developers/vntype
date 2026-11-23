@@ -209,6 +209,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vntype-cli"
+version = "0.1.0"
+dependencies = [
+ "vntype-adapter",
+ "vntype-config",
+ "vntype-core",
+ "vntype-engine",
+]
+
+[[package]]
 name = "vntype-config"
 version = "0.1.0"
 dependencies = [
@@ -236,6 +246,15 @@ dependencies = [
  "vntype-config",
  "vntype-core",
  "vntype-syllable",
+]
+
+[[package]]
+name = "vntype-settings"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "vntype-config",
+ "vntype-core",
 ]
 
 [[package]]

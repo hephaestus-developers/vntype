@@ -1,0 +1,20 @@
+[package]
+name = "vntype-cli"
+description = "Công cụ dòng lệnh vntype phục vụ kiểm thử nhanh, chuyển đổi bảng mã và chẩn đoán cấu hình."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vntype"
+path = "src/main.rs"
+
+[dependencies]
+vntype-core = { workspace = true }
+vntype-config = { workspace = true }
+vntype-engine = { workspace = true }
+vntype-adapter = { workspace = true }

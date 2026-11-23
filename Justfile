@@ -40,6 +40,14 @@ build:
 release:
     cargo build --workspace --release
 
+# Chạy công cụ dòng lệnh vntype
+cli *args:
+    cargo run -p vntype-cli -- {{args}}
+
+# Chạy ứng dụng cấu hình vntype-settings
+settings *args:
+    cargo run -p vntype-settings -- {{args}}
+
 # Chạy đầy đủ quy trình kiểm tra như trên CI
 ci: lint check test doc
 
