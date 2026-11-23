@@ -1,0 +1,9 @@
+language = "C"
+include_guard = "VNTYPE_H"
+autogen_warning = "/* Tệp header C ABI chuẩn của VNType. */"
+cpp_compat = true
+tab_width = 4
+style = "both"
+
+[export]
+prefix = "Vnt"

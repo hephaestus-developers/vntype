@@ -249,6 +249,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vntype-ffi"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "vntype-adapter",
+ "vntype-core",
+ "vntype-engine",
+]
+
+[[package]]
 name = "vntype-settings"
 version = "0.1.0"
 dependencies = [

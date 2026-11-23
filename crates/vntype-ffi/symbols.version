@@ -1,0 +1,6 @@
+VNTYPE_0.1 {
+    global:
+        vnt_*;
+    local:
+        *;
+};
