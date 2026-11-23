@@ -1,0 +1,21 @@
+[package]
+name = "vntype-ibus"
+description = "Trình nền bộ gõ IBus thuần Rust cho Linux (VNType)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vntype-ibus"
+path = "src/main.rs"
+
+[dependencies]
+vntype-config = { workspace = true }
+vntype-engine = { workspace = true }
+vntype-adapter = { workspace = true }
+serde = { workspace = true }
+zbus = { workspace = true }

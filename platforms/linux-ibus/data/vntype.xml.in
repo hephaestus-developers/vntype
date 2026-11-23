@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component>
+    <name>org.freedesktop.IBus.VNType</name>
+    <description>Bộ gõ Tiếng Việt VNType</description>
+    <exec>@LIBEXECDIR@/vntype-ibus --ibus</exec>
+    <version>0.1.0</version>
+    <author>Hephaestus Developers</author>
+    <license>MIT</license>
+    <homepage>https://github.com/hephaestus-developers/vntype</homepage>
+    <textdomain>vntype</textdomain>
+    <engines>
+        <engine>
+            <name>vntype</name>
+            <language>vi</language>
+            <license>MIT</license>
+            <author>Hephaestus Developers</author>
+            <icon>vntype</icon>
+            <layout>default</layout>
+            <longname>VNType (Tiếng Việt)</longname>
+            <description>Bộ gõ Tiếng Việt hiệu năng cao</description>
+            <rank>99</rank>
+            <symbol>VN</symbol>
+        </engine>
+    </engines>
+</component>
