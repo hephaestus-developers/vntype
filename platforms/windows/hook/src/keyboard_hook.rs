@@ -123,7 +123,9 @@ pub mod win_hook {
         WM_SYSKEYUP,
     };
 
-    use vntype_config::{SwitchKey, default_config_path, load_config_or_default, save_config_atomic};
+    use vntype_config::{
+        SwitchKey, UnicodeForm, default_config_path, load_config_or_default, save_config_atomic,
+    };
     use vntype_engine::{Config, Key, KeyEvent};
     use vntype_settings::gui::win_gui::HookGuiBridge;
     use vntype_win_ipc::win_shm::SharedRoutingMapping;
@@ -156,7 +158,22 @@ pub mod win_hook {
         match method {
             "vni" => "VNI".into(),
             "simple_telex" => "Simple Telex".into(),
+            "viqr" => "VIQR".into(),
             _ => "Telex".into(),
+        }
+    }
+
+    fn build_tray_status(cfg: &Config, vietnamese_enabled: bool) -> TrayStatus {
+        let charset = if cfg.charset == "unicode" && cfg.unicode_form == UnicodeForm::Nfd {
+            "unicode_nfd".into()
+        } else {
+            cfg.charset.clone()
+        };
+        TrayStatus {
+            vietnamese_enabled,
+            input_method_label: method_label(&cfg.input_method),
+            charset,
+            switch_key: cfg.switch_key,
         }
     }
 
@@ -316,10 +333,7 @@ pub mod win_hook {
             rt.bridge.request_refresh();
             if let Some(tray) = &rt.tray {
                 tray.register_switch_hotkey(rt.config.switch_key);
-                tray.update(TrayStatus {
-                    vietnamese_enabled: rt.processor.is_enabled(),
-                    input_method_label: method_label(&rt.config.input_method),
-                });
+                tray.update(build_tray_status(&rt.config, rt.processor.is_enabled()));
             }
         }
 
@@ -338,18 +352,37 @@ pub mod win_hook {
                     let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.processor.reload_config(rt.config.clone());
                     rt.last_config_gen = rt.routing.notify_config_reloaded();
+                    rt.bridge.request_refresh();
                 }
                 TrayMenuAction::SelectVni => {
                     rt.config.input_method = "vni".into();
                     let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.processor.reload_config(rt.config.clone());
                     rt.last_config_gen = rt.routing.notify_config_reloaded();
+                    rt.bridge.request_refresh();
                 }
                 TrayMenuAction::SelectSimpleTelex => {
                     rt.config.input_method = "simple_telex".into();
                     let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.processor.reload_config(rt.config.clone());
                     rt.last_config_gen = rt.routing.notify_config_reloaded();
+                    rt.bridge.request_refresh();
+                }
+                TrayMenuAction::SelectViqr => {
+                    rt.config.input_method = "viqr".into();
+                    let _ = save_config_atomic(default_config_path(), &rt.config);
+                    rt.processor.reload_config(rt.config.clone());
+                    rt.last_config_gen = rt.routing.notify_config_reloaded();
+                    rt.bridge.request_refresh();
+                }
+                TrayMenuAction::SelectCharset(cs) => {
+                    rt.config.charset = cs.into();
+                    rt.config.unicode_form =
+                        if cs == "unicode_nfd" { UnicodeForm::Nfd } else { UnicodeForm::Nfc };
+                    let _ = save_config_atomic(default_config_path(), &rt.config);
+                    rt.processor.reload_config(rt.config.clone());
+                    rt.last_config_gen = rt.routing.notify_config_reloaded();
+                    rt.bridge.request_refresh();
                 }
                 TrayMenuAction::OpenSettingsWindow => {
                     rt.bridge.request_show();
@@ -362,10 +395,7 @@ pub mod win_hook {
                 }
             }
             if let Some(tray) = &rt.tray {
-                tray.update(TrayStatus {
-                    vietnamese_enabled: rt.processor.is_enabled(),
-                    input_method_label: method_label(&rt.config.input_method),
-                });
+                tray.update(build_tray_status(&rt.config, rt.processor.is_enabled()));
             }
         }
     }
@@ -421,10 +451,7 @@ pub mod win_hook {
                 rt.bridge.set_vietnamese_enabled(next);
                 rt.bridge.request_refresh();
                 if let Some(tray) = &rt.tray {
-                    tray.update(TrayStatus {
-                        vietnamese_enabled: next,
-                        input_method_label: method_label(&rt.config.input_method),
-                    });
+                    tray.update(build_tray_status(&rt.config, next));
                 }
                 return true;
             }
@@ -456,10 +483,7 @@ pub mod win_hook {
         let last_config_gen = routing.config_generation.load(Ordering::Acquire);
         let processor = WindowsHookProcessor::new(initial_config.clone());
         let initial_vn = processor.is_enabled();
-        let tray = WinTrayIcon::new(TrayStatus {
-            vietnamese_enabled: initial_vn,
-            input_method_label: method_label(&initial_config.input_method),
-        });
+        let tray = WinTrayIcon::new(build_tray_status(&initial_config, initial_vn));
         if let Some(t) = &tray {
             tray_hwnd_out.store(t.hwnd_raw(), Ordering::Release);
             t.register_switch_hotkey(initial_config.switch_key);

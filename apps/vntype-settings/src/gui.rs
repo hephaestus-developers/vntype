@@ -15,7 +15,7 @@ pub mod win_gui {
     const WINDOW_W: f32 = 540.0;
     const CONTENT_W: f32 = 512.0;
     const COMPACT_H: f32 = 168.0;
-    const EXPANDED_H: f32 = 396.0;
+    const EXPANDED_H: f32 = 408.0;
 
     /// Cầu nối đồng bộ giữa luồng nền (`vntype-hook`) và cửa sổ `eframe` trên luồng chính.
     pub struct HookGuiBridge {
@@ -123,6 +123,8 @@ pub mod win_gui {
         ) -> Self {
             setup_vietnamese_fonts(&cc.egui_ctx);
             apply_light_windows_theme(&cc.egui_ctx);
+            cc.egui_ctx
+                .send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Light));
             if let Some(b) = &bridge
                 && let Ok(mut guard) = b.egui_ctx.lock()
             {
@@ -349,6 +351,189 @@ pub mod win_gui {
         response
     }
 
+    fn show_native_dropdown_menu(
+        ctx: &egui::Context,
+        anchor_logical: egui::Pos2,
+        items: &[(&str, &str)],
+        active_key: &str,
+        separators_before: &[usize],
+    ) -> Option<String> {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            AppendMenuW, CreatePopupMenu, DestroyMenu, FindWindowW, MF_CHECKED, MF_SEPARATOR,
+            MF_STRING, MF_UNCHECKED, SetForegroundWindow, TPM_LEFTALIGN, TPM_NONOTIFY,
+            TPM_RETURNCMD, TPM_TOPALIGN, TrackPopupMenu,
+        };
+
+        let mut title: Vec<u16> =
+            concat!("VNType ", env!("CARGO_PKG_VERSION")).encode_utf16().collect();
+        title.push(0);
+
+        unsafe {
+            let hwnd = FindWindowW(core::ptr::null(), title.as_ptr());
+            if hwnd.is_null() {
+                return None;
+            }
+            let menu = CreatePopupMenu();
+            if menu.is_null() {
+                return None;
+            }
+
+            for (idx, &(key, label)) in items.iter().enumerate() {
+                if separators_before.contains(&idx) {
+                    AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
+                }
+                let flag = if key == active_key { MF_CHECKED } else { MF_UNCHECKED };
+                let mut wide: Vec<u16> = label.encode_utf16().collect();
+                wide.push(0);
+                AppendMenuW(menu, MF_STRING | flag, idx + 1, wide.as_ptr());
+            }
+
+            let ppp = ctx.pixels_per_point();
+            let mut pt = POINT {
+                x: (anchor_logical.x * ppp).round() as i32,
+                y: (anchor_logical.y * ppp).round() as i32,
+            };
+            ClientToScreen(hwnd, &mut pt);
+            SetForegroundWindow(hwnd);
+            let cmd = TrackPopupMenu(
+                menu,
+                TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+                pt.x,
+                pt.y,
+                0,
+                hwnd,
+                core::ptr::null(),
+            ) as usize;
+            DestroyMenu(menu);
+
+            if cmd > 0 && cmd <= items.len() {
+                Some(items[cmd - 1].0.to_string())
+            } else {
+                None
+            }
+        }
+    }
+
+    fn native_dropdown(
+        ui: &mut egui::Ui,
+        width: f32,
+        selected_label: &str,
+        items: &[(&str, &str)],
+        active_key: &str,
+        separators_before: &[usize],
+    ) -> Option<String> {
+        let size = egui::vec2(width, 24.0);
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+        if ui.is_rect_visible(rect) {
+            let visuals = ui.style().interact(&response);
+            let painter = ui.painter();
+            painter.rect(
+                rect,
+                4.0,
+                visuals.bg_fill,
+                visuals.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
+            let galley = painter.layout_no_wrap(
+                selected_label.to_owned(),
+                egui::FontId::new(13.5, egui::FontFamily::Proportional),
+                visuals.text_color(),
+            );
+            let text_pos = egui::pos2(
+                rect.left() + 8.0,
+                rect.center().y - galley.size().y * 0.5,
+            );
+            painter.galley(text_pos, galley, visuals.text_color());
+
+            let ac = egui::pos2(rect.right() - 14.0, rect.center().y);
+            let arrow_color = visuals.text_color();
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(ac.x - 4.0, ac.y - 2.0),
+                    egui::pos2(ac.x + 4.0, ac.y - 2.0),
+                    egui::pos2(ac.x, ac.y + 3.0),
+                ],
+                arrow_color,
+                egui::Stroke::NONE,
+            ));
+        }
+
+        if response.clicked() {
+            show_native_dropdown_menu(
+                ui.ctx(),
+                egui::pos2(rect.left(), rect.bottom() + 2.0),
+                items,
+                active_key,
+                separators_before,
+            )
+        } else {
+            None
+        }
+    }
+
+    fn styled_checkbox(ui: &mut egui::Ui, checked: &mut bool, text: &str) -> egui::Response {
+        let font_id = egui::FontId::new(13.5, egui::FontFamily::Proportional);
+        let galley = ui.painter().layout_no_wrap(
+            text.to_owned(),
+            font_id,
+            egui::Color32::from_rgb(32, 32, 32),
+        );
+        let box_size = 16.0_f32;
+        let spacing = 7.0_f32;
+        let total_size = egui::vec2(box_size + spacing + galley.size().x, galley.size().y.max(18.0));
+        let (rect, mut response) = ui.allocate_exact_size(total_size, egui::Sense::click());
+        if response.clicked() {
+            *checked = !*checked;
+            response.mark_changed();
+        }
+        if ui.is_rect_visible(rect) {
+            let box_rect = egui::Rect::from_min_size(
+                egui::pos2(rect.left(), rect.center().y - box_size * 0.5),
+                egui::vec2(box_size, box_size),
+            );
+            let painter = ui.painter();
+            if *checked {
+                let fill = if response.hovered() {
+                    egui::Color32::from_rgb(0, 90, 170)
+                } else {
+                    egui::Color32::from_rgb(0, 103, 192)
+                };
+                painter.rect_filled(box_rect, 3.5, fill);
+                let c = box_rect.center();
+                let check_stroke = egui::Stroke::new(2.0_f32, egui::Color32::WHITE);
+                painter.line_segment(
+                    [egui::pos2(c.x - 4.0, c.y + 0.2), egui::pos2(c.x - 1.0, c.y + 3.2)],
+                    check_stroke,
+                );
+                painter.line_segment(
+                    [egui::pos2(c.x - 1.0, c.y + 3.2), egui::pos2(c.x + 4.3, c.y - 3.0)],
+                    check_stroke,
+                );
+            } else {
+                let border = if response.hovered() {
+                    egui::Color32::from_rgb(0, 103, 192)
+                } else {
+                    egui::Color32::from_rgb(138, 138, 138)
+                };
+                painter.rect(
+                    box_rect,
+                    3.5,
+                    egui::Color32::WHITE,
+                    egui::Stroke::new(1.2_f32, border),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let text_pos = egui::pos2(
+                box_rect.right() + spacing,
+                rect.center().y - galley.size().y * 0.5,
+            );
+            painter.galley(text_pos, galley, egui::Color32::from_rgb(32, 32, 32));
+        }
+        response
+    }
+
     fn toggle_switch(ui: &mut egui::Ui, on: bool) -> egui::Response {
         let desired_size = egui::vec2(38.0, 20.0);
         let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
@@ -527,100 +712,86 @@ pub mod win_gui {
                                     .spacing([14.0, 8.0])
                                     .show(ui, |ui| {
                                         ui.label(if vi { "Bảng mã:" } else { "Character set:" });
-                                        let unicode_label = match self.vm.draft.unicode_form {
-                                            UnicodeForm::Nfc => {
-                                                if vi {
-                                                    "Unicode dựng sẵn (NFC)"
-                                                } else {
-                                                    "Unicode (NFC)"
-                                                }
-                                            }
-                                            UnicodeForm::Nfd => {
-                                                if vi {
-                                                    "Unicode tổ hợp (NFD)"
-                                                } else {
-                                                    "Unicode (NFD)"
-                                                }
-                                            }
+                                        let charset_items: &[(&str, &str)] = &[
+                                            ("unicode", "Unicode"),
+                                            ("tcvn3", "TCVN3 (ABC)"),
+                                            ("vni_windows", "VNI Windows"),
+                                            ("viqr", "VIQR"),
+                                            ("cp1258", "Vietnamese locale CP 1258"),
+                                            (
+                                                "unicode_nfd",
+                                                if vi { "Unicode tổ hợp" } else { "Unicode (NFD)" },
+                                            ),
+                                            ("utf8_literal", "UTF-8 Literal"),
+                                            ("ncr_decimal", "NCR Decimal"),
+                                            ("ncr_hex", "NCR Hex"),
+                                            ("cstring_hex", "Unicode C String"),
+                                            ("x_utf8", "X UTF-8"),
+                                            ("viscii", "VISCII"),
+                                            ("vps", "VPS"),
+                                            ("bkhcm2", "BK HCM 2"),
+                                            ("bkhcm1", "BK HCM 1"),
+                                            ("vietware_x", "Vietware X"),
+                                            ("vietware_full", "Vietware F"),
+                                        ];
+                                        let active_charset = if self.vm.draft.charset == "unicode"
+                                            && self.vm.draft.unicode_form == UnicodeForm::Nfd
+                                        {
+                                            "unicode_nfd".to_string()
+                                        } else {
+                                            self.vm.draft.charset.clone()
                                         };
-                                        egui::ComboBox::from_id_salt("unicode_form")
-                                            .width(248.0)
-                                            .selected_text(unicode_label)
-                                            .show_ui(ui, |ui| {
-                                                if ui
-                                                    .selectable_value(
-                                                        &mut self.vm.draft.unicode_form,
-                                                        UnicodeForm::Nfc,
-                                                        if vi {
-                                                            "Unicode dựng sẵn (NFC)"
-                                                        } else {
-                                                            "Unicode (NFC)"
-                                                        },
-                                                    )
-                                                    .changed()
-                                                {
-                                                    changed = true;
-                                                }
-                                                if ui
-                                                    .selectable_value(
-                                                        &mut self.vm.draft.unicode_form,
-                                                        UnicodeForm::Nfd,
-                                                        if vi {
-                                                            "Unicode tổ hợp (NFD)"
-                                                        } else {
-                                                            "Unicode (NFD)"
-                                                        },
-                                                    )
-                                                    .changed()
-                                                {
-                                                    changed = true;
-                                                }
-                                            });
+                                        let charset_label = charset_items
+                                            .iter()
+                                            .find(|(k, _)| *k == active_charset)
+                                            .map(|(_, l)| *l)
+                                            .unwrap_or("Unicode");
+                                        if let Some(selected_key) = native_dropdown(
+                                            ui,
+                                            248.0,
+                                            charset_label,
+                                            charset_items,
+                                            &active_charset,
+                                            &[6, 11],
+                                        ) {
+                                            self.vm.draft.charset = selected_key.clone();
+                                            self.vm.draft.unicode_form =
+                                                if selected_key == "unicode_nfd" {
+                                                    UnicodeForm::Nfd
+                                                } else {
+                                                    UnicodeForm::Nfc
+                                                };
+                                            changed = true;
+                                        }
                                         ui.end_row();
 
                                         ui.label(if vi { "Kiểu gõ:" } else { "Input method:" });
-                                        let method_label = match self.vm.draft.input_method.as_str() {
-                                            "simple_telex" => {
-                                                if vi {
-                                                    "Telex giản lược"
-                                                } else {
-                                                    "Simple Telex"
-                                                }
-                                            }
-                                            "vni" => "VNI",
-                                            "viqr" => "VIQR",
-                                            _ => "Telex",
-                                        };
-                                        egui::ComboBox::from_id_salt("input_method")
-                                            .width(248.0)
-                                            .selected_text(method_label)
-                                            .show_ui(ui, |ui| {
-                                                let items = [
-                                                    ("telex", "Telex"),
-                                                    (
-                                                        "simple_telex",
-                                                        if vi {
-                                                            "Telex giản lược"
-                                                        } else {
-                                                            "Simple Telex"
-                                                        },
-                                                    ),
-                                                    ("vni", "VNI"),
-                                                    ("viqr", "VIQR"),
-                                                ];
-                                                for (val, label) in items {
-                                                    if ui
-                                                        .selectable_label(
-                                                            self.vm.draft.input_method == val,
-                                                            label,
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        self.vm.set_input_method(val);
-                                                        changed = true;
-                                                    }
-                                                }
-                                            });
+                                        let method_items: &[(&str, &str)] = &[
+                                            ("telex", "Telex"),
+                                            (
+                                                "simple_telex",
+                                                if vi { "Telex giản lược" } else { "Simple Telex" },
+                                            ),
+                                            ("vni", "VNI"),
+                                            ("viqr", "VIQR"),
+                                        ];
+                                        let method_label = method_items
+                                            .iter()
+                                            .find(|(k, _)| *k == self.vm.draft.input_method)
+                                            .map(|(_, l)| *l)
+                                            .unwrap_or("Telex");
+                                        let active_method = self.vm.draft.input_method.clone();
+                                        if let Some(selected_method) = native_dropdown(
+                                            ui,
+                                            248.0,
+                                            method_label,
+                                            method_items,
+                                            &active_method,
+                                            &[],
+                                        ) {
+                                            self.vm.set_input_method(&selected_method);
+                                            changed = true;
+                                        }
                                         ui.end_row();
 
                                         ui.label(if vi { "Phím chuyển:" } else { "Switch key:" });
@@ -724,45 +895,45 @@ pub mod win_gui {
                                     .num_columns(2)
                                     .spacing([28.0, 6.0])
                                     .show(ui, |ui| {
-                                        if ui
-                                            .checkbox(
-                                                &mut self.vm.draft.w_as_u,
-                                                if vi {
-                                                    "Cho phép gõ tự do (w → ư)"
-                                                } else {
-                                                    "Allow free w → ư typing"
-                                                },
-                                            )
-                                            .changed()
+                                        if styled_checkbox(
+                                            ui,
+                                            &mut self.vm.draft.w_as_u,
+                                            if vi {
+                                                "Cho phép gõ tự do (w → ư)"
+                                            } else {
+                                                "Allow free w → ư typing"
+                                            },
+                                        )
+                                        .changed()
                                         {
                                             changed = true;
                                         }
-                                        if ui
-                                            .checkbox(
-                                                &mut self.vm.draft.spell_check,
-                                                if vi {
-                                                    "Bật kiểm tra chính tả"
-                                                } else {
-                                                    "Enable spell check"
-                                                },
-                                            )
-                                            .changed()
+                                        if styled_checkbox(
+                                            ui,
+                                            &mut self.vm.draft.spell_check,
+                                            if vi {
+                                                "Bật kiểm tra chính tả"
+                                            } else {
+                                                "Enable spell check"
+                                            },
+                                        )
+                                        .changed()
                                         {
                                             changed = true;
                                         }
                                         ui.end_row();
 
                                         let mut tone_old = self.vm.draft.tone_style == ToneStyle::Old;
-                                        if ui
-                                            .checkbox(
-                                                &mut tone_old,
-                                                if vi {
-                                                    "Đặt dấu oà, uý (thay vì òa, úy)"
-                                                } else {
-                                                    "Use oà, uý (instead of òa, úy)"
-                                                },
-                                            )
-                                            .changed()
+                                        if styled_checkbox(
+                                            ui,
+                                            &mut tone_old,
+                                            if vi {
+                                                "Đặt dấu oà, uý (thay vì òa, úy)"
+                                            } else {
+                                                "Use oà, uý (instead of òa, úy)"
+                                            },
+                                        )
+                                        .changed()
                                         {
                                             self.vm.set_tone_style(if tone_old {
                                                 ToneStyle::Old
@@ -771,44 +942,44 @@ pub mod win_gui {
                                             });
                                             changed = true;
                                         }
-                                        if ui
-                                            .checkbox(
-                                                &mut self.vm.draft.restore_after_space,
-                                                if vi {
-                                                    "Khôi phục từ sau dấu cách"
-                                                } else {
-                                                    "Restore word after Space"
-                                                },
-                                            )
-                                            .changed()
+                                        if styled_checkbox(
+                                            ui,
+                                            &mut self.vm.draft.restore_after_space,
+                                            if vi {
+                                                "Khôi phục từ sau dấu cách"
+                                            } else {
+                                                "Restore word after Space"
+                                            },
+                                        )
+                                        .changed()
                                         {
                                             changed = true;
                                         }
                                         ui.end_row();
 
-                                        if ui
-                                            .checkbox(
-                                                &mut self.vm.draft.edit_previous_word,
-                                                if vi {
-                                                    "Nạp lại từ trước con trỏ"
-                                                } else {
-                                                    "Edit word before caret"
-                                                },
-                                            )
-                                            .changed()
+                                        if styled_checkbox(
+                                            ui,
+                                            &mut self.vm.draft.edit_previous_word,
+                                            if vi {
+                                                "Nạp lại từ trước con trỏ"
+                                            } else {
+                                                "Edit word before caret"
+                                            },
+                                        )
+                                        .changed()
                                         {
                                             changed = true;
                                         }
-                                        if ui
-                                            .checkbox(
-                                                &mut self.vm.draft.auto_capitalize,
-                                                if vi {
-                                                    "Tự động viết hoa đầu câu"
-                                                } else {
-                                                    "Auto-capitalize sentences"
-                                                },
-                                            )
-                                            .changed()
+                                        if styled_checkbox(
+                                            ui,
+                                            &mut self.vm.draft.auto_capitalize,
+                                            if vi {
+                                                "Tự động viết hoa đầu câu"
+                                            } else {
+                                                "Auto-capitalize sentences"
+                                            },
+                                        )
+                                        .changed()
                                         {
                                             changed = true;
                                         }
@@ -824,25 +995,25 @@ pub mod win_gui {
                                 if vi { "Tuỳ chọn gõ tắt" } else { "Macro options" },
                                 250.0,
                                 |ui| {
-                                    if ui
-                                        .checkbox(
-                                            &mut self.vm.draft.macro_enabled,
-                                            if vi { "Cho phép gõ tắt" } else { "Enable macro" },
-                                        )
-                                        .changed()
+                                    if styled_checkbox(
+                                        ui,
+                                        &mut self.vm.draft.macro_enabled,
+                                        if vi { "Cho phép gõ tắt" } else { "Enable macro" },
+                                    )
+                                    .changed()
                                     {
                                         changed = true;
                                     }
-                                    if ui
-                                        .checkbox(
-                                            &mut self.vm.draft.macro_in_off_mode,
-                                            if vi {
-                                                "Gõ tắt cả khi tắt tiếng Việt"
-                                            } else {
-                                                "Allow macro in off mode"
-                                            },
-                                        )
-                                        .changed()
+                                    if styled_checkbox(
+                                        ui,
+                                        &mut self.vm.draft.macro_in_off_mode,
+                                        if vi {
+                                            "Gõ tắt cả khi tắt tiếng Việt"
+                                        } else {
+                                            "Allow macro in off mode"
+                                        },
+                                    )
+                                    .changed()
                                     {
                                         changed = true;
                                     }
@@ -855,20 +1026,20 @@ pub mod win_gui {
                                 if vi { "Hệ thống" } else { "System settings" },
                                 250.0,
                                 |ui| {
-                                    if ui
-                                        .checkbox(
-                                            &mut self.vm.draft.default_vietnamese,
-                                            if vi {
-                                                "Bật Tiếng Việt mặc định"
-                                            } else {
-                                                "Enable Vietnamese by default"
-                                            },
-                                        )
-                                        .changed()
+                                    if styled_checkbox(
+                                        ui,
+                                        &mut self.vm.draft.default_vietnamese,
+                                        if vi {
+                                            "Bật Tiếng Việt mặc định"
+                                        } else {
+                                            "Enable Vietnamese by default"
+                                        },
+                                    )
+                                    .changed()
                                     {
                                         changed = true;
                                     }
-                                    ui.checkbox(&mut self.vietnamese_ui, "Giao diện Tiếng Việt");
+                                    styled_checkbox(ui, &mut self.vietnamese_ui, "Giao diện Tiếng Việt");
                                 },
                             );
                         });

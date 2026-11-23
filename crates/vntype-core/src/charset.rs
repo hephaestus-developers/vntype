@@ -26,6 +26,8 @@ pub const CHARSETS: &[&str] = &[
     "ncr_hex",
     "cstring_hex",
     "cstring_decimal",
+    "utf8_literal",
+    "x_utf8",
 ];
 
 const SINGLE_BYTE: &[&str] =
@@ -108,6 +110,8 @@ pub fn display_name(charset: &str) -> Option<&'static str> {
     match normalize(charset) {
         "unicode" => Some("Unicode (NFC)"),
         "unicode_nfd" => Some("Unicode tổ hợp (NFD)"),
+        "utf8_literal" => Some("UTF-8 Literal"),
+        "x_utf8" => Some("X UTF-8"),
         key => tables().tables.get(key).map(|t| t.display),
     }
 }
@@ -129,8 +133,10 @@ pub fn normalize(name: &str) -> &'static str {
         "vietware_full" | "vietware full" => "vietware_full",
         "ncr_decimal" | "ncr decimal" | "ncr" => "ncr_decimal",
         "ncr_hex" | "ncr hex" => "ncr_hex",
-        "cstring_hex" | "unicode c string hex" => "cstring_hex",
+        "cstring_hex" | "unicode c string hex" | "unicode c string" => "cstring_hex",
         "cstring_decimal" | "unicode c string decimal" => "cstring_decimal",
+        "utf8_literal" | "utf-8 literal" => "utf8_literal",
+        "x_utf8" | "x utf-8" => "x_utf8",
         _ => "unicode",
     }
 }
@@ -150,6 +156,8 @@ pub fn encode(text: &str, charset: &str) -> String {
     match key {
         "unicode" => text.nfc().collect(),
         "unicode_nfd" => text.nfd().collect(),
+        "utf8_literal" => encode_utf8_literal(text),
+        "x_utf8" => encode_x_utf8(text),
         "viqr" => encode_viqr(text),
         _ => {
             let Some(table) = tables().tables.get(key) else { return text.to_string() };
@@ -163,6 +171,73 @@ pub fn encode(text: &str, charset: &str) -> String {
             out
         }
     }
+}
+
+fn encode_utf8_literal(text: &str) -> String {
+    let normalized: String = text.nfc().collect();
+    let mut out = String::with_capacity(normalized.len() * 2);
+    let mut buf = [0u8; 4];
+    for ch in normalized.chars() {
+        if ch.is_ascii() {
+            out.push(ch);
+        } else {
+            for &b in ch.encode_utf8(&mut buf).as_bytes() {
+                out.push(b as char);
+            }
+        }
+    }
+    out
+}
+
+fn decode_utf8_literal(text: &str) -> String {
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut buf = [0u8; 4];
+    for ch in text.chars() {
+        if let Ok(b) = u8::try_from(ch as u32) {
+            bytes.push(b);
+        } else {
+            bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+        }
+    }
+    String::from_utf8_lossy(&bytes).nfc().collect()
+}
+
+fn encode_x_utf8(text: &str) -> String {
+    use core::fmt::Write;
+    let normalized: String = text.nfc().collect();
+    let mut out = String::with_capacity(normalized.len() * 4);
+    let mut buf = [0u8; 4];
+    for ch in normalized.chars() {
+        if ch.is_ascii() {
+            out.push(ch);
+        } else {
+            for &b in ch.encode_utf8(&mut buf).as_bytes() {
+                let _ = write!(out, "\\x{b:02x}");
+            }
+        }
+    }
+    out
+}
+
+fn decode_x_utf8(text: &str) -> String {
+    let raw = text.as_bytes();
+    let mut bytes = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == b'\\'
+            && i + 3 < raw.len()
+            && (raw[i + 1] == b'x' || raw[i + 1] == b'X')
+            && let Ok(hex) = core::str::from_utf8(&raw[i + 2..i + 4])
+            && let Ok(val) = u8::from_str_radix(hex, 16)
+        {
+            bytes.push(val);
+            i += 4;
+            continue;
+        }
+        bytes.push(raw[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&bytes).nfc().collect()
 }
 
 fn encode_viqr(text: &str) -> String {
@@ -203,6 +278,8 @@ pub fn decode(text: &str, charset: &str) -> String {
     let key = normalize(charset);
     match key {
         "unicode" | "unicode_nfd" => return text.nfc().collect(),
+        "utf8_literal" => return decode_utf8_literal(text),
+        "x_utf8" => return decode_x_utf8(text),
         _ => {}
     }
     let Some(table) = tables().decode.get(key) else { return text.nfc().collect() };

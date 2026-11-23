@@ -351,9 +351,15 @@ impl ImeSession {
     }
 
     fn out(&self, s: &str) -> String {
-        match self.config.unicode_form {
-            UnicodeForm::Nfc => s.nfc().collect(),
-            UnicodeForm::Nfd => s.nfd().collect(),
+        let charset = self.profile.charset.as_deref().unwrap_or(&self.config.charset);
+        let key = vntype_core::normalize_charset(charset);
+        if key == "unicode" {
+            match self.config.unicode_form {
+                UnicodeForm::Nfc => s.nfc().collect(),
+                UnicodeForm::Nfd => s.nfd().collect(),
+            }
+        } else {
+            vntype_core::encode_charset(s, key)
         }
     }
 

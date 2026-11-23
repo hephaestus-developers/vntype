@@ -1,9 +1,11 @@
 //! Quản lý biểu tượng khay hệ thống (System Tray Icon) và thực đơn ngữ cảnh nhanh trên Windows.
 
+use vntype_config::SwitchKey;
+
 /// Các lệnh điều khiển người dùng có thể kích hoạt từ biểu tượng khay hệ thống.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayMenuAction {
-    /// Bật hoặc tắt chế độ gõ tiếng Việt (`Alt+,`).
+    /// Bật hoặc tắt chế độ gõ tiếng Việt.
     ToggleVietnamese,
     /// Chọn kiểu gõ Telex.
     SelectTelex,
@@ -11,6 +13,10 @@ pub enum TrayMenuAction {
     SelectVni,
     /// Chọn kiểu gõ Simple Telex.
     SelectSimpleTelex,
+    /// Chọn kiểu gõ VIQR.
+    SelectViqr,
+    /// Chọn bảng mã đầu ra.
+    SelectCharset(&'static str),
     /// Mở cửa sổ giao diện cấu hình `vntype-settings`.
     OpenSettingsWindow,
     /// Thoát trình nền VNType.
@@ -20,17 +26,34 @@ pub enum TrayMenuAction {
 /// Trạng thái hiển thị của biểu tượng khay hệ thống.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayStatus {
-    /// `true` nếu đang ở chế độ Tiếng Việt (hiển thị nhãn `VN`), `false` nếu Tiếng Anh (`EN`).
+    /// `true` nếu đang ở chế độ Tiếng Việt (hiển thị nhãn `V`), `false` nếu Tiếng Anh (`E`).
     pub vietnamese_enabled: bool,
     /// Tên kiểu gõ hiện tại (`"Telex"`, `"VNI"`, ...).
     pub input_method_label: String,
+    /// Định danh bảng mã đầu ra hiện tại (`"unicode"`, `"tcvn3"`, ...).
+    pub charset: String,
+    /// Phím tắt chuyển chế độ hiện tại.
+    pub switch_key: SwitchKey,
 }
 
 impl TrayStatus {
+    /// Nhãn phím tắt hiện tại (`"Alt+,"` hoặc `"Alt+Z"`).
+    pub fn switch_key_label(&self) -> &'static str {
+        match self.switch_key {
+            SwitchKey::AltComma => "Alt+,",
+            SwitchKey::AltZ => "Alt+Z",
+        }
+    }
+
     /// Tạo chuỗi chú thích (Tooltip) hiển thị khi di chuột lên biểu tượng khay hệ thống.
     pub fn tooltip_text(&self) -> String {
         let mode = if self.vietnamese_enabled { "Tiếng Việt (VN)" } else { "Tiếng Anh (EN)" };
-        format!("VNType — {} | Kiểu gõ: {} (Alt+, để chuyển)", mode, self.input_method_label)
+        format!(
+            "VNType — {} | Kiểu gõ: {} ({} để chuyển)",
+            mode,
+            self.input_method_label,
+            self.switch_key_label()
+        )
     }
 }
 
@@ -55,7 +78,7 @@ pub mod win_tray {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
         DestroyMenu, DestroyWindow, GetCursorPos, HICON, ICONINFO, IDI_APPLICATION, LoadIconW, MF_CHECKED,
-        MF_SEPARATOR, MF_STRING, MF_UNCHECKED, PostMessageW, PostQuitMessage, RegisterClassW,
+        MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, PostMessageW, PostQuitMessage, RegisterClassW,
         SetForegroundWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TrackPopupMenu,
         WM_APP, WM_HOTKEY, WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW,
     };
@@ -79,13 +102,37 @@ pub mod win_tray {
     const CMD_TELEX: usize = 1002;
     const CMD_VNI: usize = 1003;
     const CMD_SIMPLE_TELEX: usize = 1004;
-    const CMD_SETTINGS: usize = 1005;
-    const CMD_EXIT: usize = 1006;
+    const CMD_VIQR: usize = 1005;
+    const CMD_SETTINGS: usize = 1006;
+    const CMD_EXIT: usize = 1007;
+    const CMD_CHARSET_BASE: usize = 2000;
+
+    const TRAY_CHARSETS: &[(&str, &str)] = &[
+        ("unicode", "Unicode"),
+        ("tcvn3", "TCVN3 (ABC)"),
+        ("vni_windows", "VNI Windows"),
+        ("viqr", "VIQR"),
+        ("cp1258", "Vietnamese locale CP 1258"),
+        ("unicode_nfd", "Unicode tổ hợp"),
+        ("utf8_literal", "UTF-8 Literal"),
+        ("ncr_decimal", "NCR Decimal"),
+        ("ncr_hex", "NCR Hex"),
+        ("cstring_hex", "Unicode C String"),
+        ("x_utf8", "X UTF-8"),
+        ("viscii", "VISCII"),
+        ("vps", "VPS"),
+        ("bkhcm2", "BK HCM 2"),
+        ("bkhcm1", "BK HCM 1"),
+        ("vietware_x", "Vietware X"),
+        ("vietware_full", "Vietware F"),
+    ];
 
     thread_local! {
         static TRAY_STATE: RefCell<TrayStatus> = RefCell::new(TrayStatus {
             vietnamese_enabled: true,
             input_method_label: "Telex".into(),
+            charset: "unicode".into(),
+            switch_key: SwitchKey::AltComma,
         });
         static PENDING_ACTIONS: RefCell<Vec<TrayMenuAction>> = const { RefCell::new(Vec::new()) };
     }
@@ -304,28 +351,59 @@ pub mod win_tray {
 
         let vn_flag = if state.vietnamese_enabled { MF_CHECKED } else { MF_UNCHECKED };
         let telex_flag = if state.input_method_label == "Telex" { MF_CHECKED } else { MF_UNCHECKED };
-        let vni_flag = if state.input_method_label == "VNI" { MF_CHECKED } else { MF_UNCHECKED };
         let simple_flag =
             if state.input_method_label == "Simple Telex" { MF_CHECKED } else { MF_UNCHECKED };
+        let vni_flag = if state.input_method_label == "VNI" { MF_CHECKED } else { MF_UNCHECKED };
+        let viqr_flag = if state.input_method_label == "VIQR" { MF_CHECKED } else { MF_UNCHECKED };
 
         unsafe {
-            AppendMenuW(
-                menu,
-                MF_STRING | vn_flag,
-                CMD_TOGGLE_VN,
-                to_wide("Bật gõ Tiếng Việt (Alt+,)").as_ptr(),
-            );
+            let toggle_label = format!("Bật gõ Tiếng Việt ({})", state.switch_key_label());
+            AppendMenuW(menu, MF_STRING | vn_flag, CMD_TOGGLE_VN, to_wide(&toggle_label).as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
-            AppendMenuW(menu, MF_STRING | telex_flag, CMD_TELEX, to_wide("Kiểu gõ Telex").as_ptr());
-            AppendMenuW(menu, MF_STRING | vni_flag, CMD_VNI, to_wide("Kiểu gõ VNI").as_ptr());
-            AppendMenuW(
-                menu,
-                MF_STRING | simple_flag,
-                CMD_SIMPLE_TELEX,
-                to_wide("Kiểu gõ Simple Telex").as_ptr(),
-            );
+
+            let charset_menu = CreatePopupMenu();
+            if !charset_menu.is_null() {
+                for (idx, &(key, label)) in TRAY_CHARSETS.iter().enumerate() {
+                    if idx == 6 || idx == 11 {
+                        AppendMenuW(charset_menu, MF_SEPARATOR, 0, core::ptr::null());
+                    }
+                    let flag = if state.charset == key { MF_CHECKED } else { MF_UNCHECKED };
+                    AppendMenuW(
+                        charset_menu,
+                        MF_STRING | flag,
+                        CMD_CHARSET_BASE + idx,
+                        to_wide(label).as_ptr(),
+                    );
+                }
+                AppendMenuW(
+                    menu,
+                    MF_POPUP,
+                    charset_menu as usize,
+                    to_wide("Bảng mã").as_ptr(),
+                );
+            }
+
+            let method_menu = CreatePopupMenu();
+            if !method_menu.is_null() {
+                AppendMenuW(method_menu, MF_STRING | telex_flag, CMD_TELEX, to_wide("Telex").as_ptr());
+                AppendMenuW(
+                    method_menu,
+                    MF_STRING | simple_flag,
+                    CMD_SIMPLE_TELEX,
+                    to_wide("Telex giản lược").as_ptr(),
+                );
+                AppendMenuW(method_menu, MF_STRING | vni_flag, CMD_VNI, to_wide("VNI").as_ptr());
+                AppendMenuW(method_menu, MF_STRING | viqr_flag, CMD_VIQR, to_wide("VIQR").as_ptr());
+                AppendMenuW(
+                    menu,
+                    MF_POPUP,
+                    method_menu as usize,
+                    to_wide("Kiểu gõ").as_ptr(),
+                );
+            }
+
             AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
-            AppendMenuW(menu, MF_STRING, CMD_SETTINGS, to_wide("Cài đặt VNType...").as_ptr());
+            AppendMenuW(menu, MF_STRING, CMD_SETTINGS, to_wide("Bảng điều khiển...").as_ptr());
             AppendMenuW(menu, MF_STRING, CMD_EXIT, to_wide("Thoát").as_ptr());
 
             let mut pt: POINT = core::mem::zeroed();
@@ -347,10 +425,14 @@ pub mod win_tray {
                 CMD_TELEX => Some(TrayMenuAction::SelectTelex),
                 CMD_VNI => Some(TrayMenuAction::SelectVni),
                 CMD_SIMPLE_TELEX => Some(TrayMenuAction::SelectSimpleTelex),
+                CMD_VIQR => Some(TrayMenuAction::SelectViqr),
                 CMD_SETTINGS => Some(TrayMenuAction::OpenSettingsWindow),
                 CMD_EXIT => {
                     PostQuitMessage(0);
                     Some(TrayMenuAction::ExitApplication)
+                }
+                c if c >= CMD_CHARSET_BASE && c < CMD_CHARSET_BASE + TRAY_CHARSETS.len() => {
+                    Some(TrayMenuAction::SelectCharset(TRAY_CHARSETS[c - CMD_CHARSET_BASE].0))
                 }
                 _ => None,
             };
@@ -402,7 +484,12 @@ mod tests {
 
     #[test]
     fn tray_tooltip_contains_mode_and_method() {
-        let s = TrayStatus { vietnamese_enabled: true, input_method_label: "Telex".into() };
+        let s = TrayStatus {
+            vietnamese_enabled: true,
+            input_method_label: "Telex".into(),
+            charset: "unicode".into(),
+            switch_key: vntype_config::SwitchKey::AltComma,
+        };
         assert!(s.tooltip_text().contains("VN") && s.tooltip_text().contains("Telex"));
     }
 }

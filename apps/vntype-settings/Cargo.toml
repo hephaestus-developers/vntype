@@ -23,6 +23,7 @@ eframe = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_System_Console",
     "Win32_UI_WindowsAndMessaging",
 ] }

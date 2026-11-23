@@ -23,6 +23,10 @@ pub enum OutputMode {
     Replace,
 }
 
+fn default_charset() -> String {
+    "unicode".into()
+}
+
 /// Phím tắt chuyển nhanh chế độ gõ Tiếng Việt / Tiếng Anh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -175,6 +179,9 @@ pub struct Config {
     pub smart_caps: bool,
     /// Dạng chuẩn hoá Unicode tại đầu ra.
     pub unicode_form: UnicodeForm,
+    /// Bảng mã đầu ra (`"unicode"`, `"tcvn3"`, `"vni_windows"`, `"viqr"`, ...).
+    #[serde(default = "default_charset")]
+    pub charset: String,
     /// Phím tắt chuyển đổi chế độ Việt / Anh.
     pub switch_key: SwitchKey,
     /// Phiên bản lược đồ cấu hình.
@@ -206,6 +213,7 @@ impl Default for Config {
             restore_after_space: true,
             smart_caps: false,
             unicode_form: UnicodeForm::Nfc,
+            charset: default_charset(),
             switch_key: SwitchKey::AltComma,
             schema_version: CONFIG_SCHEMA_VERSION,
         }
