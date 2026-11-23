@@ -3,6 +3,11 @@
 **/*.rs.bk
 *.pdb
 
+# CMake / C++ build & IDE index
+build/
+compile_commands.json
+.cache/
+
 # Coverage & profiling
 *.profraw
 *.profdata

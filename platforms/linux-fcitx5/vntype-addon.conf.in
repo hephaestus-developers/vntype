@@ -1,0 +1,8 @@
+[Addon]
+Name=VNType
+Category=InputMethod
+Library=libvntype
+Type=SharedLibrary
+OnDemand=True
+Configurable=False
+Version=0.1.0

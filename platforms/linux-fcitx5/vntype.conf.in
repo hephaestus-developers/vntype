@@ -1,0 +1,7 @@
+[InputMethod]
+Name=VNType
+Icon=vntype
+Label=VN
+LangCode=vi
+Addon=vntype
+Configurable=False
