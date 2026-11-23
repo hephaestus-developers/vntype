@@ -1,58 +1,9 @@
-//! Ứng dụng quản lý và kiểm tra cấu hình `vntype-settings` cho Windows và Linux.
+//! Điểm vào dòng lệnh và GUI cho `vntype-settings`.
 
-use std::path::PathBuf;
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
-use vntype_config::{
-    Config, ConfigError, ToneStyle, default_config_path, load_config_or_default, save_config_atomic,
-};
-use vntype_core::InputMethodSpec;
-
-/// Bộ điều khiển trạng thái giao diện cấu hình (ViewModel), hỗ trợ kiểm tra hợp lệ và lưu nguyên tử.
-#[derive(Debug, Clone)]
-pub struct SettingsViewModel {
-    /// Đường dẫn tệp cấu hình đang chỉnh sửa.
-    pub config_path: PathBuf,
-    /// Bản thảo cấu hình đang chỉnh sửa trên giao diện.
-    pub draft: Config,
-    /// Bản sao cấu hình gốc đã lưu trên đĩa để phát hiện thay đổi.
-    pub saved: Config,
-}
-
-impl SettingsViewModel {
-    /// Tải cấu hình từ đường dẫn `config_path` để khởi tạo ViewModel.
-    pub fn load(config_path: PathBuf) -> Self {
-        let cfg = load_config_or_default(&config_path);
-        SettingsViewModel { config_path, draft: cfg.clone(), saved: cfg }
-    }
-
-    /// Kiểm tra xem người dùng đã thay đổi bất kỳ thông số nào so với bản đã lưu hay chưa.
-    pub fn is_dirty(&self) -> bool {
-        self.draft != self.saved
-    }
-
-    /// Đặt kiểu gõ mới (`"telex"`, `"simple_telex"`, `"vni"`, `"viqr"`).
-    ///
-    /// Trả về `false` nếu tên kiểu gõ không hợp lệ.
-    pub fn set_input_method(&mut self, method: &str) -> bool {
-        if InputMethodSpec::by_name(method).is_none() {
-            return false;
-        }
-        self.draft.input_method = method.to_string();
-        true
-    }
-
-    /// Đặt quy tắc dấu thanh mới hoặc cũ.
-    pub fn set_tone_style(&mut self, style: ToneStyle) {
-        self.draft.tone_style = style;
-    }
-
-    /// Lưu bản thảo cấu hình xuống đĩa một cách nguyên tử.
-    pub fn apply_and_save(&mut self) -> Result<(), ConfigError> {
-        save_config_atomic(&self.config_path, &self.draft)?;
-        self.saved = self.draft.clone();
-        Ok(())
-    }
-}
+use vntype_config::default_config_path;
+use vntype_settings::SettingsViewModel;
 
 fn print_help() {
     println!(
@@ -71,8 +22,25 @@ Tuỳ chọn:
     );
 }
 
+fn attach_parent_console_if_needed(has_cli_args: bool) {
+    #[cfg(windows)]
+    if has_cli_args {
+        unsafe {
+            windows_sys::Win32::System::Console::AttachConsole(
+                windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+            );
+        }
+    }
+    let _ = has_cli_args;
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let is_cli = args.iter().any(|a| {
+        matches!(a.as_str(), "--help" | "-h" | "--version" | "-V" | "--print" | "--set-method")
+    });
+    attach_parent_console_if_needed(is_cli);
+
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print_help();
         return;
@@ -105,13 +73,23 @@ fn main() {
         println!("Đã lưu kiểu gõ: {m}");
         return;
     }
-    println!("VNType Settings ({}) — Kiểu gõ: {}", vm.config_path.display(), vm.draft.input_method);
+
+    #[cfg(windows)]
+    {
+        vntype_settings::gui::win_gui::run_settings_gui(vm);
+    }
+
+    #[cfg(not(windows))]
+    {
+        println!("VNType Settings ({}) — Kiểu gõ: {}", vm.config_path.display(), vm.draft.input_method);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use vntype_config::ToneStyle;
 
     static SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -140,3 +118,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+

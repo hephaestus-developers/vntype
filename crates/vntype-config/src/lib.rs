@@ -10,7 +10,7 @@ pub use atomic_save::{ConfigError, save_config_atomic};
 pub use loader::{fingerprint_bytes, load_config_file, load_config_or_default};
 pub use paths::{default_config_dir, default_config_path, default_user_words_path};
 pub use schema::{
-    AppProfile, CONFIG_SCHEMA_VERSION, Config, OutputMode, UnicodeForm, app_aliases, default_app_profiles,
-    normalize_app_id, resolve_profile,
+    AppProfile, CONFIG_SCHEMA_VERSION, Config, OutputMode, SwitchKey, UnicodeForm, app_aliases,
+    default_app_profiles, normalize_app_id, resolve_profile,
 };
 pub use vntype_syllable::ToneStyle;

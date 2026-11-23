@@ -109,22 +109,21 @@ pub mod win_tsf {
     use std::path::Path;
     use std::rc::Rc;
     use std::sync::atomic::Ordering;
-    use windows::Win32::Foundation::{BOOL, LPARAM, WPARAM};
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, GetKeyboardState, ToUnicode, VK_CAPITAL, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN,
-        VK_SHIFT,
+        GetKeyState, GetKeyboardState, ToUnicode, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN,
     };
     use windows::Win32::UI::TextServices::{
         ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfDocumentMgr,
         ITfEditSession, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfSource,
         ITfTextInputProcessor_Impl, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfThreadMgr,
-        ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, TF_ES_READWRITE, TF_ES_SYNC, TfClientId,
+        ITfThreadMgrEventSink, ITfThreadMgrEventSink_Impl, TF_ES_READWRITE, TF_ES_SYNC,
     };
-    use windows_core::{Interface, Ref, implement};
+    use windows_core::{BOOL, IUnknownImpl, Interface, Ref, implement};
 
     use vntype_config::{default_config_path, load_config_or_default};
-    use vntype_engine::{KeyEvent, Modifiers};
+    use vntype_engine::KeyEvent;
     use vntype_win_ipc::win_shm::SharedRoutingMapping;
 
     use crate::composition::CompositionTracker;
@@ -144,34 +143,20 @@ pub mod win_tsf {
         (pid, app)
     }
 
-    fn current_modifiers() -> Modifiers {
+    fn current_modifiers() -> (bool, bool, bool) {
         unsafe {
-            let mut mods = Modifiers::empty();
-            if (GetKeyState(VK_SHIFT.0 as i32) as u16) & 0x8000 != 0 {
-                mods |= Modifiers::SHIFT;
-            }
-            if (GetKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0 {
-                mods |= Modifiers::CTRL;
-            }
-            if (GetKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0 {
-                mods |= Modifiers::ALT;
-            }
-            if (GetKeyState(VK_LWIN.0 as i32) as u16) & 0x8000 != 0
-                || (GetKeyState(VK_RWIN.0 as i32) as u16) & 0x8000 != 0
-            {
-                mods |= Modifiers::SUPER;
-            }
-            if (GetKeyState(VK_CAPITAL.0 as i32) as u16) & 0x0001 != 0 {
-                mods |= Modifiers::CAPS;
-            }
-            mods
+            let ctrl = (GetKeyState(VK_CONTROL.0 as i32) as u16) & 0x8000 != 0;
+            let alt = (GetKeyState(VK_MENU.0 as i32) as u16) & 0x8000 != 0;
+            let meta = ((GetKeyState(VK_LWIN.0 as i32) as u16) & 0x8000 != 0)
+                || ((GetKeyState(VK_RWIN.0 as i32) as u16) & 0x8000 != 0);
+            (ctrl, alt, meta)
         }
     }
 
     fn translate_tsf_key(wparam: WPARAM, lparam: LPARAM) -> KeyEvent {
         let vk = (wparam.0 & 0xFFFF) as u16;
         let scan_code = ((lparam.0 >> 16) & 0xFF) as u32;
-        let mods = current_modifiers();
+        let (ctrl, alt, meta) = current_modifiers();
         let unicode_char = unsafe {
             let mut kb_state = [0u8; 256];
             let _ = GetKeyboardState(&mut kb_state);
@@ -180,7 +165,7 @@ pub mod win_tsf {
             if n == 1 { char::from_u32(out[0] as u32) } else { None }
         };
         let key = VntypeTextService::map_virtual_key(vk, unicode_char);
-        KeyEvent { key, mods }
+        KeyEvent { key, ctrl, alt, meta }
     }
 
     /// Thực thể COM triển khai đầy đủ `ITfTextInputProcessorEx` cho VNType trên Windows.
@@ -190,7 +175,7 @@ pub mod win_tsf {
         tracker: Rc<RefCell<CompositionTracker>>,
         composition: Rc<RefCell<Option<ITfComposition>>>,
         thread_mgr: RefCell<Option<ITfThreadMgr>>,
-        client_id: RefCell<TfClientId>,
+        client_id: RefCell<u32>,
         thread_mgr_cookie: RefCell<u32>,
         routing: Option<SharedRoutingMapping>,
         last_config_gen: RefCell<u64>,
@@ -227,16 +212,17 @@ pub mod win_tsf {
             }
         }
 
-        fn run_edit_session(&self, context: &ITfContext, effects: Vec<vntype_adapter::Effect>) -> bool {
+        fn run_edit_session(
+            &self,
+            context: &ITfContext,
+            effects: Vec<vntype_adapter::Effect>,
+            comp_sink: ITfCompositionSink,
+        ) -> bool {
             let client_id = *self.client_id.borrow();
             if client_id == 0 || effects.is_empty() {
                 return false;
             }
             let eaten = Rc::new(RefCell::new(false));
-            let comp_sink: ITfCompositionSink = match self.cast() {
-                Ok(s) => s,
-                Err(_) => return false,
-            };
             let session: ITfEditSession = WinEditSession::new(
                 context.clone(),
                 effects,
@@ -268,7 +254,7 @@ pub mod win_tsf {
     }
 
     impl ITfTextInputProcessor_Impl for WinTextService_Impl {
-        fn Activate(&self, ptim: Ref<'_, ITfThreadMgr>, tid: TfClientId) -> windows_core::Result<()> {
+        fn Activate(&self, ptim: Ref<'_, ITfThreadMgr>, tid: u32) -> windows_core::Result<()> {
             self.ActivateEx(ptim, tid, 0)
         }
 
@@ -301,7 +287,7 @@ pub mod win_tsf {
         fn ActivateEx(
             &self,
             ptim: Ref<'_, ITfThreadMgr>,
-            tid: TfClientId,
+            tid: u32,
             _dwflags: u32,
         ) -> windows_core::Result<()> {
             let mgr = ptim.ok()?.clone();
@@ -309,13 +295,13 @@ pub mod win_tsf {
             *self.client_id.borrow_mut() = tid;
 
             unsafe {
-                let sink: ITfThreadMgrEventSink = self.cast()?;
+                let sink: ITfThreadMgrEventSink = self.to_interface();
                 if let Ok(src) = mgr.cast::<ITfSource>() {
                     let cookie = src.AdviseSink(&ITfThreadMgrEventSink::IID, &sink)?;
                     *self.thread_mgr_cookie.borrow_mut() = cookie;
                 }
                 let ks_mgr: ITfKeystrokeMgr = mgr.cast()?;
-                let key_sink: ITfKeyEventSink = self.cast()?;
+                let key_sink: ITfKeyEventSink = self.to_interface();
                 ks_mgr.AdviseKeyEventSink(tid, &key_sink, true)?;
             }
             Ok(())
@@ -359,7 +345,7 @@ pub mod win_tsf {
                 if let Ok(ctx) = unsafe { doc_mgr.GetTop() } {
                     let mut all = focus_effects;
                     all.extend(field_effects);
-                    let _ = self.run_edit_session(&ctx, all);
+                    let _ = self.run_edit_session(&ctx, all, self.to_interface());
                 }
             }
             Ok(())
@@ -392,9 +378,9 @@ pub mod win_tsf {
         ) -> windows_core::Result<BOOL> {
             self.maybe_reload_config();
             let ev = translate_tsf_key(wparam, lparam);
-            let interested = !ev.mods.contains(Modifiers::CTRL)
-                && !ev.mods.contains(Modifiers::ALT)
-                && !ev.mods.contains(Modifiers::SUPER)
+            let interested = !ev.ctrl
+                && !ev.alt
+                && !ev.meta
                 && !matches!(ev.key, vntype_engine::Key::Modifier | vntype_engine::Key::Other);
             Ok(BOOL::from(interested))
         }
@@ -419,7 +405,7 @@ pub mod win_tsf {
             let ev = translate_tsf_key(wparam, lparam);
             let vk = (wparam.0 & 0xFFFF) as u32;
             let effects = self.service.borrow_mut().controller.process_key(ev, vk);
-            let eaten = self.run_edit_session(ctx, effects);
+            let eaten = self.run_edit_session(ctx, effects, self.to_interface());
             Ok(BOOL::from(eaten))
         }
 
@@ -444,7 +430,7 @@ pub mod win_tsf {
     impl ITfCompositionSink_Impl for WinTextService_Impl {
         fn OnCompositionTerminated(
             &self,
-            _ecwrite: TfEditCookie,
+            _ecwrite: u32,
             _pcomposition: Ref<'_, ITfComposition>,
         ) -> windows_core::Result<()> {
             if !self.tracker.borrow().ending_internally {

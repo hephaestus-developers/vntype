@@ -70,9 +70,9 @@ pub mod win_edit_session {
     use std::cell::RefCell;
     use std::rc::Rc;
     use windows::Win32::UI::TextServices::{
-        ITfComposition, ITfCompositionSink, ITfContext, ITfContextComposition, ITfEditSession,
-        ITfEditSession_Impl, ITfInsertAtSelection, ITfRange, TF_AE_NONE, TF_ANCHOR_END, TF_SELECTION,
-        TF_SELECTIONSTYLE, TfEditCookie,
+        INSERT_TEXT_AT_SELECTION_FLAGS, ITfComposition, ITfCompositionSink, ITfContext,
+        ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInsertAtSelection, ITfRange,
+        TF_AE_NONE, TF_ANCHOR_END, TF_SELECTION, TF_SELECTIONSTYLE,
     };
     use windows_core::{Interface, implement};
 
@@ -85,7 +85,7 @@ pub mod win_edit_session {
     /// Triển khai [`TsfContextBackend`] trên `ITfContext` thật của Windows TSF.
     pub struct WinTsfContextBackend<'a> {
         pub context: &'a ITfContext,
-        pub ec: TfEditCookie,
+        pub ec: u32,
         pub composition: &'a mut Option<ITfComposition>,
         pub comp_sink: &'a ITfCompositionSink,
         pub tracker: &'a mut CompositionTracker,
@@ -193,7 +193,9 @@ pub mod win_edit_session {
 
             unsafe {
                 if let Ok(insert_at_sel) = self.context.cast::<ITfInsertAtSelection>() {
-                    if let Ok(range) = insert_at_sel.InsertTextAtSelection(self.ec, 0, &utf16) {
+                    if let Ok(range) =
+                        insert_at_sel.InsertTextAtSelection(self.ec, INSERT_TEXT_AT_SELECTION_FLAGS(0), &utf16)
+                    {
                         self.set_caret_to_range_end(&range);
                     }
                 }
@@ -242,7 +244,7 @@ pub mod win_edit_session {
     }
 
     impl ITfEditSession_Impl for WinEditSession_Impl {
-        fn DoEditSession(&self, ec: TfEditCookie) -> windows_core::Result<()> {
+        fn DoEditSession(&self, ec: u32) -> windows_core::Result<()> {
             let mut tracker = self.tracker.borrow_mut();
             let mut comp = self.composition.borrow_mut();
             let mut dummy_tracker = tracker.clone();

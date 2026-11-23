@@ -105,42 +105,44 @@ impl WindowsHookProcessor {
 pub mod win_hook {
     use std::cell::RefCell;
     use std::path::Path;
-    use std::process::Command;
-    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicIsize, Ordering};
     use windows_sys::Win32::Foundation::{CloseHandle, HINSTANCE, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetKeyState, GetKeyboardState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, SendInput, ToUnicode, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_LWIN, VK_MENU,
-        VK_RWIN, VK_SHIFT,
+        GetAsyncKeyState, GetKeyboardState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+        KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, SendInput, ToUnicode, VK_BACK, VK_CONTROL, VK_LWIN,
+        VK_MENU, VK_RWIN,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
         HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, PostQuitMessage, SetWindowsHookExW,
-        TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
+        WM_SYSKEYUP,
     };
 
-    use vntype_config::{default_config_path, load_config_or_default, save_config};
-    use vntype_engine::{Config, InputMethod, Key, KeyEvent, Modifiers};
+    use vntype_config::{SwitchKey, default_config_path, load_config_or_default, save_config_atomic};
+    use vntype_engine::{Config, Key, KeyEvent};
+    use vntype_settings::gui::win_gui::HookGuiBridge;
     use vntype_win_ipc::win_shm::SharedRoutingMapping;
 
-    use crate::osd::{OsdBanner, win_osd::WinOsdWindow};
     use crate::tray::{TrayMenuAction, TrayStatus, win_tray::WinTrayIcon};
 
     use super::{WinInputBatch, WindowsHookProcessor};
 
     const VNTYPE_INJECTED_TAG: usize = 0x564E_5450;
     const VK_OEM_COMMA: u32 = 0xBC;
+    const VK_Z: u32 = 0x5A;
 
     struct HookRuntime {
         processor: WindowsHookProcessor,
         config: Config,
         routing: SharedRoutingMapping,
         tray: Option<WinTrayIcon>,
-        osd: Option<WinOsdWindow>,
+        bridge: Arc<HookGuiBridge>,
         last_config_gen: u64,
         last_app: String,
     }
@@ -148,13 +150,14 @@ pub mod win_hook {
     thread_local! {
         static HOOK_RUNTIME: RefCell<Option<HookRuntime>> = const { RefCell::new(None) };
         static HOOK_HANDLE: RefCell<HHOOK> = const { RefCell::new(core::ptr::null_mut()) };
+        static WIN_KEY_DOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
 
-    fn method_label(method: InputMethod) -> String {
+    fn method_label(method: &str) -> String {
         match method {
-            InputMethod::Telex => "Telex".into(),
-            InputMethod::Vni => "VNI".into(),
-            InputMethod::SimpleTelex => "Simple Telex".into(),
+            "vni" => "VNI".into(),
+            "simple_telex" => "Simple Telex".into(),
+            _ => "Telex".into(),
         }
     }
 
@@ -257,32 +260,19 @@ pub mod win_hook {
         }
     }
 
-    fn current_modifiers() -> Modifiers {
+    fn current_modifiers() -> (bool, bool, bool) {
         unsafe {
-            let mut mods = Modifiers::empty();
-            if (GetKeyState(VK_SHIFT as i32) as u16) & 0x8000 != 0 {
-                mods |= Modifiers::SHIFT;
-            }
-            if (GetKeyState(VK_CONTROL as i32) as u16) & 0x8000 != 0 {
-                mods |= Modifiers::CTRL;
-            }
-            if (GetKeyState(VK_MENU as i32) as u16) & 0x8000 != 0 {
-                mods |= Modifiers::ALT;
-            }
-            if (GetKeyState(VK_LWIN as i32) as u16) & 0x8000 != 0
-                || (GetKeyState(VK_RWIN as i32) as u16) & 0x8000 != 0
-            {
-                mods |= Modifiers::SUPER;
-            }
-            if (GetKeyState(VK_CAPITAL as i32) as u16) & 0x0001 != 0 {
-                mods |= Modifiers::CAPS;
-            }
-            mods
+            let ctrl = (GetAsyncKeyState(VK_CONTROL as i32) as u16) & 0x8000 != 0;
+            let alt = (GetAsyncKeyState(VK_MENU as i32) as u16) & 0x8000 != 0;
+            let async_win = ((GetAsyncKeyState(VK_LWIN as i32) as u16) & 0x8000 != 0)
+                || ((GetAsyncKeyState(VK_RWIN as i32) as u16) & 0x8000 != 0);
+            let meta = async_win || WIN_KEY_DOWN.with(|c| c.get());
+            (ctrl, alt, meta)
         }
     }
 
     fn translate_vk_to_key_event(vk: u32, scan_code: u32) -> KeyEvent {
-        let mods = current_modifiers();
+        let (ctrl, alt, meta) = current_modifiers();
         let key = match vk as u16 {
             0x08 => Key::Backspace,
             0x0D => Key::Enter,
@@ -313,7 +303,7 @@ pub mod win_hook {
                 }
             },
         };
-        KeyEvent { key, mods }
+        KeyEvent { key, ctrl, alt, meta }
     }
 
     fn sync_ui_and_actions(rt: &mut HookRuntime) {
@@ -321,54 +311,61 @@ pub mod win_hook {
         if cfg_gen != rt.last_config_gen {
             rt.config = load_config_or_default(default_config_path());
             rt.processor.reload_config(rt.config.clone());
+            rt.processor.set_enabled(rt.config.default_vietnamese);
             rt.last_config_gen = cfg_gen;
+            rt.bridge.set_vietnamese_enabled(rt.processor.is_enabled());
+            rt.bridge.request_refresh();
             if let Some(tray) = &rt.tray {
+                tray.register_switch_hotkey(rt.config.switch_key);
                 tray.update(TrayStatus {
                     vietnamese_enabled: rt.processor.is_enabled(),
-                    input_method_label: method_label(rt.config.input_method),
+                    input_method_label: method_label(&rt.config.input_method),
                 });
             }
         }
 
-        let action = rt.tray.as_ref().and_then(|t| t.take_pending_action());
-        if let Some(act) = action {
+        while let Some(act) = rt.tray.as_ref().and_then(|t| t.take_pending_action()) {
             match act {
                 TrayMenuAction::ToggleVietnamese => {
                     let next = !rt.processor.is_enabled();
                     rt.processor.set_enabled(next);
-                    if let Some(osd) = &rt.osd {
-                        osd.show(OsdBanner::for_vietnamese_state(next));
-                    }
+                    rt.config.default_vietnamese = next;
+                    let _ = save_config_atomic(default_config_path(), &rt.config);
+                    rt.bridge.set_vietnamese_enabled(next);
+                    rt.bridge.request_refresh();
                 }
                 TrayMenuAction::SelectTelex => {
-                    rt.config.input_method = InputMethod::Telex;
-                    let _ = save_config(default_config_path(), &rt.config);
+                    rt.config.input_method = "telex".into();
+                    let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.processor.reload_config(rt.config.clone());
                     rt.last_config_gen = rt.routing.notify_config_reloaded();
                 }
                 TrayMenuAction::SelectVni => {
-                    rt.config.input_method = InputMethod::Vni;
-                    let _ = save_config(default_config_path(), &rt.config);
+                    rt.config.input_method = "vni".into();
+                    let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.processor.reload_config(rt.config.clone());
                     rt.last_config_gen = rt.routing.notify_config_reloaded();
                 }
                 TrayMenuAction::SelectSimpleTelex => {
-                    rt.config.input_method = InputMethod::SimpleTelex;
-                    let _ = save_config(default_config_path(), &rt.config);
+                    rt.config.input_method = "simple_telex".into();
+                    let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.processor.reload_config(rt.config.clone());
                     rt.last_config_gen = rt.routing.notify_config_reloaded();
                 }
                 TrayMenuAction::OpenSettingsWindow => {
-                    let _ = Command::new("vntype-settings.exe").spawn();
+                    rt.bridge.request_show();
                 }
-                TrayMenuAction::ExitApplication => unsafe {
-                    PostQuitMessage(0);
-                },
+                TrayMenuAction::ExitApplication => {
+                    rt.bridge.request_exit();
+                    unsafe {
+                        PostQuitMessage(0);
+                    }
+                }
             }
             if let Some(tray) = &rt.tray {
                 tray.update(TrayStatus {
                     vietnamese_enabled: rt.processor.is_enabled(),
-                    input_method_label: method_label(rt.config.input_method),
+                    input_method_label: method_label(&rt.config.input_method),
                 });
             }
         }
@@ -376,11 +373,26 @@ pub mod win_hook {
 
     unsafe extern "system" fn ll_keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         let next_hook = HOOK_HANDLE.with(|h| *h.borrow());
-        if code != HC_ACTION as i32 || (wparam as u32 != WM_KEYDOWN && wparam as u32 != WM_SYSKEYDOWN) {
+        if code != HC_ACTION as i32 {
             return unsafe { CallNextHookEx(next_hook, code, wparam, lparam) };
         }
 
         let kb = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
+        let msg = wparam as u32;
+        if (kb.flags & LLKHF_INJECTED) == 0 && (kb.vkCode == VK_LWIN as u32 || kb.vkCode == VK_RWIN as u32) {
+            let is_down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+            let is_up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+            if is_down {
+                WIN_KEY_DOWN.with(|c| c.set(true));
+            } else if is_up {
+                WIN_KEY_DOWN.with(|c| c.set(false));
+            }
+        }
+
+        if msg != WM_KEYDOWN && msg != WM_SYSKEYDOWN {
+            return unsafe { CallNextHookEx(next_hook, code, wparam, lparam) };
+        }
+
         if (kb.flags & LLKHF_INJECTED) != 0 || kb.dwExtraInfo == VNTYPE_INJECTED_TAG {
             return unsafe { CallNextHookEx(next_hook, code, wparam, lparam) };
         }
@@ -393,20 +405,27 @@ pub mod win_hook {
             };
             sync_ui_and_actions(rt);
 
-            // Phím tắt Alt+, để bật/tắt Tiếng Việt nhanh.
-            if kb.vkCode == VK_OEM_COMMA
-                && event.mods.contains(Modifiers::ALT)
-                && !event.mods.contains(Modifiers::CTRL)
-            {
+            // Nếu `RegisterHotKey` chưa đăng ký được, dùng hook dự phòng để bắt phím chuyển.
+            let is_switch_hotkey = !WinTrayIcon::is_hotkey_registered()
+                && match rt.config.switch_key {
+                    SwitchKey::AltComma => {
+                        kb.vkCode == VK_OEM_COMMA && event.alt && !event.ctrl && !event.meta
+                    }
+                    SwitchKey::AltZ => {
+                        kb.vkCode == VK_Z && event.alt && !event.ctrl && !event.meta
+                    }
+                };
+            if is_switch_hotkey {
                 let next = !rt.processor.is_enabled();
                 rt.processor.set_enabled(next);
-                if let Some(osd) = &rt.osd {
-                    osd.show(OsdBanner::for_vietnamese_state(next));
-                }
+                rt.config.default_vietnamese = next;
+                let _ = save_config_atomic(default_config_path(), &rt.config);
+                rt.bridge.set_vietnamese_enabled(next);
+                rt.bridge.request_refresh();
                 if let Some(tray) = &rt.tray {
                     tray.update(TrayStatus {
                         vietnamese_enabled: next,
-                        input_method_label: method_label(rt.config.input_method),
+                        input_method_label: method_label(&rt.config.input_method),
                     });
                 }
                 return true;
@@ -429,16 +448,25 @@ pub mod win_hook {
         if consume { 1 } else { unsafe { CallNextHookEx(next_hook, code, wparam, lparam) } }
     }
 
-    /// Khởi chạy vòng lặp thông điệp Win32 cho `WH_KEYBOARD_LL`, Tray và OSD.
-    pub fn run_hook_event_loop(initial_config: Config) -> Result<(), u32> {
+    /// Khởi chạy vòng lặp thông điệp Win32 cho `WH_KEYBOARD_LL` và Tray.
+    pub fn run_hook_event_loop(
+        initial_config: Config,
+        bridge: Arc<HookGuiBridge>,
+        tray_hwnd_out: Arc<AtomicIsize>,
+    ) -> Result<(), u32> {
         let routing = SharedRoutingMapping::open_or_create()?;
         let last_config_gen = routing.config_generation.load(Ordering::Acquire);
-        let tray = WinTrayIcon::new(TrayStatus {
-            vietnamese_enabled: true,
-            input_method_label: method_label(initial_config.input_method),
-        });
-        let osd = WinOsdWindow::new();
         let processor = WindowsHookProcessor::new(initial_config.clone());
+        let initial_vn = processor.is_enabled();
+        let tray = WinTrayIcon::new(TrayStatus {
+            vietnamese_enabled: initial_vn,
+            input_method_label: method_label(&initial_config.input_method),
+        });
+        if let Some(t) = &tray {
+            tray_hwnd_out.store(t.hwnd_raw(), Ordering::Release);
+            t.register_switch_hotkey(initial_config.switch_key);
+        }
+        bridge.set_vietnamese_enabled(initial_vn);
 
         HOOK_RUNTIME.with(|cell| {
             *cell.borrow_mut() = Some(HookRuntime {
@@ -446,7 +474,7 @@ pub mod win_hook {
                 config: initial_config,
                 routing,
                 tray,
-                osd,
+                bridge,
                 last_config_gen,
                 last_app: String::new(),
             });

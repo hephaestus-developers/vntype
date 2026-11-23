@@ -125,7 +125,7 @@ pub mod win_reg {
                     &desc[..desc.len() - 1],
                     &icon_file[..icon_file.len() - 1],
                     0,
-                    None,
+                    Default::default(),
                     0,
                     true,
                     0,

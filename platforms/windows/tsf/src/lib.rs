@@ -77,11 +77,11 @@ pub extern "system" fn DllUnregisterServer() -> i32 {
 mod win_com_exports {
     use core::ffi::c_void;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use windows::Win32::Foundation::{BOOL, CLASS_E_CLASSNOTAVAILABLE, E_NOINTERFACE, HMODULE, S_OK};
+    use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, E_NOINTERFACE, HMODULE, S_OK};
     use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl};
     use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
     use windows::Win32::UI::TextServices::ITfTextInputProcessorEx;
-    use windows_core::{GUID, IUnknown, Interface, implement};
+    use windows_core::{BOOL, GUID, IUnknown, Interface, implement};
 
     use crate::registration::CLSID_VNTYPE_TEXT_SERVICE;
     use crate::registration::win_reg::{register_tsf_server, unregister_tsf_server};

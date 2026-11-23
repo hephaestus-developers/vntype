@@ -23,6 +23,17 @@ pub enum OutputMode {
     Replace,
 }
 
+/// Phím tắt chuyển nhanh chế độ gõ Tiếng Việt / Tiếng Anh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SwitchKey {
+    /// Tổ hợp phím `Alt + ,` (mặc định).
+    #[default]
+    AltComma,
+    /// Tổ hợp phím `Alt + Z`.
+    AltZ,
+}
+
 /// Dạng tổ hợp Unicode tại đầu ra của bộ gõ.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -164,6 +175,8 @@ pub struct Config {
     pub smart_caps: bool,
     /// Dạng chuẩn hoá Unicode tại đầu ra.
     pub unicode_form: UnicodeForm,
+    /// Phím tắt chuyển đổi chế độ Việt / Anh.
+    pub switch_key: SwitchKey,
     /// Phiên bản lược đồ cấu hình.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -193,6 +206,7 @@ impl Default for Config {
             restore_after_space: true,
             smart_caps: false,
             unicode_form: UnicodeForm::Nfc,
+            switch_key: SwitchKey::AltComma,
             schema_version: CONFIG_SCHEMA_VERSION,
         }
     }

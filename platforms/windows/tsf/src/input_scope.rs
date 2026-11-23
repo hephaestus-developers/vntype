@@ -62,7 +62,6 @@ pub fn is_windows_terminal_app(app: &str) -> bool {
 #[cfg(windows)]
 pub mod win_input_scope_query {
     use windows::Win32::System::Com::CoTaskMemFree;
-    use windows::Win32::System::Variant::VARIANT;
     use windows::Win32::UI::TextServices::{
         GUID_PROP_INPUTSCOPE, ITfContext, ITfInputScope, ITfRange, TF_SELECTION, TF_SELECTIONSTYLE,
     };
@@ -88,10 +87,9 @@ pub mod win_input_scope_query {
             let Ok(prop) = context.GetProperty(&GUID_PROP_INPUTSCOPE) else {
                 return Vec::new();
             };
-            let mut var = VARIANT::default();
-            if prop.GetValue(ec, &range, &mut var).is_err() {
+            let Ok(var) = prop.GetValue(ec, &range) else {
                 return Vec::new();
-            }
+            };
 
             let Ok(unk) = windows_core::IUnknown::try_from(&var) else {
                 return Vec::new();
