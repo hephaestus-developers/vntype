@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "apps/*", "platforms/linux-ibus", "platforms/linux-wayland"]
+members = ["crates/*", "apps/*", "platforms/linux/ibus", "platforms/linux/wayland"]
 
 [workspace.package]
 version = "0.1.0"

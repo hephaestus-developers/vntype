@@ -12,7 +12,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 option(VNTYPE_FCITX5_TEST_ONLY "Chỉ biên dịch bộ kiểm thử C ABI (không cần header Fcitx5)" OFF)
 
 if(NOT VNTYPE_STATIC_LIB)
-    set(VNTYPE_STATIC_LIB "${CMAKE_CURRENT_SOURCE_DIR}/../../target/release/libvntype_ffi.a")
+    set(VNTYPE_STATIC_LIB "${CMAKE_CURRENT_SOURCE_DIR}/../../../target/release/libvntype_ffi.a")
 endif()
 
 if(NOT VNTYPE_FCITX5_TEST_ONLY)
@@ -26,7 +26,7 @@ if(NOT VNTYPE_FCITX5_TEST_ONLY)
     target_compile_options(vntype PRIVATE -Wall -Wextra -Wpedantic -fvisibility=hidden)
     target_include_directories(vntype PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../crates/vntype-ffi/include")
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../crates/vntype-ffi/include")
     target_link_libraries(vntype PRIVATE
         Fcitx5::Core
         Fcitx5::Utils
@@ -49,7 +49,7 @@ if(BUILD_TESTING)
     target_compile_features(vntype-fcitx5-test PRIVATE cxx_std_20)
     target_compile_options(vntype-fcitx5-test PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
     target_include_directories(vntype-fcitx5-test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../crates/vntype-ffi/include")
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../crates/vntype-ffi/include")
     target_link_libraries(vntype-fcitx5-test PRIVATE "${VNTYPE_STATIC_LIB}")
     if(UNIX AND NOT APPLE)
         target_link_libraries(vntype-fcitx5-test PRIVATE dl pthread m)

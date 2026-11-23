@@ -6,7 +6,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/../../.." && pwd)"
 PREFIX="${PREFIX:-/usr}"
 LIBEXECDIR="${LIBEXECDIR:-$PREFIX/libexec}"
 COMPONENT_DIR="$PREFIX/share/ibus/component"
