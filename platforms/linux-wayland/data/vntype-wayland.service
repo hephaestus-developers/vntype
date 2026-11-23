@@ -1,0 +1,14 @@
+[Unit]
+Description=VNType Wayland Input Method Daemon
+Documentation=https://github.com/hephaestus-developers/vntype
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/vntype-wayland
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
