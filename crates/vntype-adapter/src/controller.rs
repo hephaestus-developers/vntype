@@ -429,17 +429,22 @@ impl AdapterController {
         effects
     }
 
+    /// Áp cấu hình mới trực tiếp lên phiên hiện tại và trả về các hiệu ứng cần thực thi trước khi gõ tiếp.
+    pub fn apply_config(&mut self, config: Config) -> Vec<Effect> {
+        let mut effects = self.cancel_pending_async();
+        let before = self.session.display();
+        let was_adopted = self.session.is_adopted();
+        self.shared.0.borrow_mut().config = config;
+        let act = self.session.reload_config();
+        effects.extend(self.translate_action(act, &before, was_adopted, None));
+        effects
+    }
+
     /// Áp một mảnh JSON cấu hình mới lên phiên hiện tại và trả về các hiệu ứng cần thực thi trước khi gõ tiếp.
     pub fn apply_config_json(&mut self, json_patch: &str) -> Option<Vec<Effect>> {
         let base = self.shared.0.borrow().config.clone();
         let patched = base.apply_json_patch(json_patch)?;
-        let mut effects = self.cancel_pending_async();
-        let before = self.session.display();
-        let was_adopted = self.session.is_adopted();
-        self.shared.0.borrow_mut().config = patched;
-        let act = self.session.reload_config();
-        effects.extend(self.translate_action(act, &before, was_adopted, None));
-        Some(effects)
+        Some(self.apply_config(patched))
     }
 
     /// Xoá sạch trạng thái phiên gõ và hàng đợi mà không chốt văn bản.

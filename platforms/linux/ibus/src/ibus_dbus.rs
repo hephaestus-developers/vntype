@@ -341,6 +341,10 @@ fn build_ibus_property_with_sub(
         .expect("tạo IBusProperty hợp lệ")
 }
 
+fn prop_normal(key: &str, label: &str) -> Structure<'static> {
+    build_ibus_property_with_sub(key, 0, label, label, 0, Vec::new())
+}
+
 fn prop_radio(key: &str, label: &str, checked: bool) -> Structure<'static> {
     build_ibus_property_with_sub(key, 2, label, label, u32::from(checked), Vec::new())
 }
@@ -528,6 +532,8 @@ fn build_ibus_prop_list_variant(cfg: &Config) -> OwnedVariant {
                     "Bung gõ tắt khi tắt tiếng Việt",
                     cfg.macro_in_off_mode,
                 ),
+                prop_separator("vntype.macro.sep"),
+                prop_normal("vntype.macro.edit", "Chỉnh sửa bảng gõ tắt (macros.txt)..."),
             ],
         ),
     ];

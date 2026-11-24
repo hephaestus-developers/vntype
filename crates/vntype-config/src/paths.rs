@@ -38,6 +38,11 @@ pub fn default_user_words_path() -> PathBuf {
     env_path("VNTYPE_USER_WORDS").unwrap_or_else(|| default_config_dir().join("user_words.txt"))
 }
 
+/// Trả về đường dẫn tệp bảng gõ tắt `macros.txt` mặc định (có hỗ trợ biến môi trường `VNTYPE_MACROS`).
+pub fn default_macros_path() -> PathBuf {
+    env_path("VNTYPE_MACROS").unwrap_or_else(|| default_config_dir().join("macros.txt"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,5 +51,6 @@ mod tests {
     fn default_paths_have_expected_filenames() {
         assert_eq!(default_config_path().file_name().and_then(|s| s.to_str()), Some("config.json"));
         assert_eq!(default_user_words_path().file_name().and_then(|s| s.to_str()), Some("user_words.txt"));
+        assert_eq!(default_macros_path().file_name().and_then(|s| s.to_str()), Some("macros.txt"));
     }
 }

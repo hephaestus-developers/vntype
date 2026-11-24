@@ -1,10 +1,15 @@
 //! Cài đặt dịch vụ `org.freedesktop.IBus.Engine` bằng Rust thuần sử dụng [`AdapterController`].
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::time::SystemTime;
 
 use vntype_adapter::{AdapterController, Effect, char_to_utf16_offset};
-use vntype_config::{Config, ToneStyle, UnicodeForm, load_config_or_default, save_config_atomic};
+use vntype_config::{
+    Config, ToneStyle, UnicodeForm, ensure_macros_file, load_config_or_default, load_macros_file,
+    save_config_atomic,
+};
 use vntype_engine::{FieldKind, Key, OutputMode};
 
 use crate::keymap::{IBUS_RELEASE_MASK, translate_ibus_key};
@@ -78,21 +83,42 @@ pub enum IbusSignal {
 /// Bộ xử lý giao thức IBus Engine bọc quanh [`AdapterController`].
 pub struct IbusEngineService {
     controller: AdapterController,
+    base_config: Config,
     config_path: PathBuf,
     config_mtime: Option<SystemTime>,
+    macros_path: PathBuf,
+    macros_mtime: Option<SystemTime>,
+    file_macros: HashMap<String, String>,
     signals: Vec<IbusSignal>,
     holding_eaten_backspace: bool,
+}
+
+fn merge_config_macros(base: &Config, file_macros: &HashMap<String, String>) -> Config {
+    let mut merged = base.clone();
+    merged.macros.extend(file_macros.iter().map(|(k, v)| (k.clone(), v.clone())));
+    merged
 }
 
 impl IbusEngineService {
     /// Khởi tạo dịch vụ IBus Engine với đường dẫn tệp cấu hình `config_path`.
     pub fn new(config_path: PathBuf) -> Self {
-        let cfg = load_config_or_default(&config_path);
-        let mtime = std::fs::metadata(&config_path).and_then(|m| m.modified()).ok();
+        let base_config = load_config_or_default(&config_path);
+        let config_mtime = std::fs::metadata(&config_path).and_then(|m| m.modified()).ok();
+        let macros_path = std::env::var_os("VNTYPE_MACROS")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| config_path.with_file_name("macros.txt"));
+        let macros_mtime = std::fs::metadata(&macros_path).and_then(|m| m.modified()).ok();
+        let file_macros = load_macros_file(&macros_path);
+        let merged = merge_config_macros(&base_config, &file_macros);
         IbusEngineService {
-            controller: AdapterController::new(cfg, OutputMode::Preedit),
+            controller: AdapterController::new(merged, OutputMode::Preedit),
+            base_config,
             config_path,
-            config_mtime: mtime,
+            config_mtime,
+            macros_path,
+            macros_mtime,
+            file_macros,
             signals: Vec::new(),
             holding_eaten_backspace: false,
         }
@@ -182,7 +208,22 @@ impl IbusEngineService {
 
     /// Xử lý sự kiện người dùng chọn một mục trong menu IBus (`PropertyActivate(name, state)`).
     pub fn property_activate(&mut self, name: &str, state: u32) {
-        let mut cfg = self.current_config();
+        if name == "vntype.macro.edit" {
+            if let Err(err) = ensure_macros_file(&self.macros_path) {
+                debug_log(&format!("MACRO_EDIT ensure_macros_file err={err}"));
+                return;
+            }
+            self.macros_mtime = std::fs::metadata(&self.macros_path).and_then(|m| m.modified()).ok();
+            let _ = std::process::Command::new("xdg-open")
+                .arg(&self.macros_path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            return;
+        }
+
+        let mut cfg = self.base_config.clone();
         let checked = state != 0;
         let mut changed = true;
 
@@ -243,13 +284,13 @@ impl IbusEngineService {
         }
 
         let _ = save_config_atomic(&self.config_path, &cfg);
-        if let Ok(json) = serde_json::to_string(&cfg)
-            && let Some(effects) = self.controller.apply_config_json(&json)
-        {
-            self.apply_effects(effects, 0, 0, 0);
-        }
+        self.base_config = cfg;
+        let merged = merge_config_macros(&self.base_config, &self.file_macros);
+        let effects = self.controller.apply_config(merged.clone());
+        self.apply_effects(effects, 0, 0, 0);
         self.config_mtime = std::fs::metadata(&self.config_path).and_then(|m| m.modified()).ok();
-        self.signals.push(IbusSignal::UpdateMenu { changed_key: name.to_string(), config: Box::new(cfg) });
+        self.signals
+            .push(IbusSignal::UpdateMenu { changed_key: name.to_string(), config: Box::new(merged) });
     }
 
     /// Xử lý sự kiện nhận tiêu điểm `FocusIn(app_id)`.
@@ -337,14 +378,25 @@ impl IbusEngineService {
         if !self.controller.display_text().is_empty() {
             return;
         }
-        let mtime = std::fs::metadata(&self.config_path).and_then(|m| m.modified()).ok();
-        if mtime != self.config_mtime {
-            self.config_mtime = mtime;
-            if let Ok(json) = std::fs::read_to_string(&self.config_path)
-                && let Some(effects) = self.controller.apply_config_json(&json)
-            {
-                self.apply_effects(effects, 0, 0, 0);
-            }
+        let cfg_mtime = std::fs::metadata(&self.config_path).and_then(|m| m.modified()).ok();
+        let mac_mtime = std::fs::metadata(&self.macros_path).and_then(|m| m.modified()).ok();
+        let mut dirty = false;
+
+        if cfg_mtime != self.config_mtime {
+            self.config_mtime = cfg_mtime;
+            self.base_config = load_config_or_default(&self.config_path);
+            dirty = true;
+        }
+        if mac_mtime != self.macros_mtime {
+            self.macros_mtime = mac_mtime;
+            self.file_macros = load_macros_file(&self.macros_path);
+            dirty = true;
+        }
+
+        if dirty {
+            let merged = merge_config_macros(&self.base_config, &self.file_macros);
+            let effects = self.controller.apply_config(merged);
+            self.apply_effects(effects, 0, 0, 0);
         }
     }
 }
@@ -475,5 +527,33 @@ mod tests {
                 IbusSignal::ForwardKeyEvent { keyval: 0xff0d, keycode: 36, state: IBUS_RELEASE_MASK },
             ]
         );
+    }
+
+    #[test]
+    fn macros_txt_loads_reloads_and_does_not_pollute_config_json() {
+        let dir = std::env::temp_dir().join(format!("vntype_ibus_macros_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = dir.join("config.json");
+        let macros_path = dir.join("macros.txt");
+
+        std::fs::write(&macros_path, "ko=không\n").unwrap();
+        let mut svc = IbusEngineService::new(cfg_path.clone());
+        assert_eq!(svc.current_config().macros.get("ko").map(String::as_str), Some("không"));
+
+        // Bật/tắt một tuỳ chọn trên menu không được ghi đè macros từ macros.txt vào config.json
+        svc.property_activate("vntype.opt.w_as_u", 1);
+        let saved_cfg = load_config_or_default(&cfg_path);
+        assert!(saved_cfg.macros.is_empty());
+
+        // Mô phỏng cập nhật macros.txt (lùi mtime trước rồi ghi mới để tránh trùng timestamp trên FS nhanh)
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&macros_path, "dc=được\n").unwrap();
+        svc.macros_mtime = None;
+        svc.reload_config_if_needed();
+        assert_eq!(svc.current_config().macros.get("dc").map(String::as_str), Some("được"));
+        assert!(!svc.current_config().macros.contains_key("ko"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
