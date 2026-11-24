@@ -6,6 +6,17 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 
 ## [Unreleased]
 
+## [2026.11.1] - 2026-11-24
+
+### Added
+
+- **Linux (`vntype-linux-settings`, `vntype-ibus`)**:
+  - Bổ sung tệp `.desktop` (`dev.hephaestus.vntype.settings.desktop`) và biểu tượng `vntype.svg` vào `/usr/share/applications/` và `/usr/share/icons/hicolor/scalable/apps/` (tích hợp trong `package-deb.sh` và `install.sh`), kèm `icon_name` cho cửa sổ GTK3.
+
+### Fixed
+
+- Sửa cảnh báo `clippy::collapsible_if` trong `build.rs` của `vntype-settings` và `vntype-hook`, cùng định dạng re-export trong `vntype-engine`.
+
 ## [2026.11.0] - 2026-11-24
 
 ### Added
@@ -32,5 +43,6 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 - Chuyển giao diện cài đặt Windows từ `eframe` sang Win32 API thuần siêu nhẹ.
 - Áp dụng quy tắc phiên bản `{year}.{month}.{number}` bắt đầu từ `2026.11.0`.
 
-[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.0...HEAD
+[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.1...HEAD
+[2026.11.1]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.0...v2026.11.1
 [2026.11.0]: https://github.com/hephaestus-developers/vntype/releases/tag/v2026.11.0
