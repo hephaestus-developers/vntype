@@ -217,6 +217,24 @@ const uint8_t *vnt_charset_encode_bytes(VntController *c, const char *charset, c
 const char *vnt_charset_decode_bytes(VntController *c, const char *charset, const uint8_t *data,
                                      size_t len);
 
+/** Giải phóng chuỗi C do `vnt_settings_load_json` cấp phát. */
+void vnt_free_string(char *s);
+
+/** Trả về chuỗi JSON mô tả các khả năng giao diện của hệ điều hành hiện tại (`PlatformCapabilities`). */
+const char *vnt_settings_capabilities_json(void);
+
+/** Đọc cấu hình từ `config_path` (hoặc đường dẫn mặc định nếu NULL) dưới dạng JSON; caller tự giải phóng bằng `vnt_free_string`. */
+char *vnt_settings_load_json(const char *config_path);
+
+/** Kiểm tra hợp lệ bản vá JSON và lưu nguyên tử xuống `config_path` (hoặc đường dẫn mặc định nếu NULL). */
+bool vnt_settings_validate_and_save_json(const char *config_path, const char *json);
+
+/** Đảm bảo tệp `macros.txt` tương ứng với `config_path` tồn tại trên đĩa. */
+bool vnt_macros_ensure_file(const char *config_path);
+
+/** Trả về số lượng quy tắc gõ tắt đang có trong `macros.txt` (`-1` nếu lỗi). */
+int32_t vnt_macros_entry_count(const char *config_path);
+
 #ifdef __cplusplus
 }
 #endif

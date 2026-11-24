@@ -108,9 +108,46 @@ final class VNTypeInputController: IMKInputController {
         return VntBridge.execute(effects, on: textClient)
     }
 
+    override func menu() -> NSMenu! {
+        let menu = NSMenu(title: "VNType")
+        let prefsItem = NSMenuItem(
+            title: "Mở cài đặt VNType...",
+            action: #selector(openPreferences(_:)),
+            keyEquivalent: ","
+        )
+        prefsItem.target = self
+        menu.addItem(prefsItem)
+
+        let macrosItem = NSMenuItem(
+            title: "Bảng gõ tắt (macros.txt)...",
+            action: #selector(openMacros(_:)),
+            keyEquivalent: ""
+        )
+        macrosItem.target = self
+        menu.addItem(macrosItem)
+        return menu
+    }
+
+    @objc private func openPreferences(_ sender: Any?) {
+        PreferencesWindowController.shared.show()
+    }
+
+    @objc private func openMacros(_ sender: Any?) {
+        let path = Self.defaultConfigURL()?.path
+        if VntBridge.ensureMacrosFile(configPath: path), let url = Self.defaultMacrosURL() {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     static func defaultConfigURL() -> URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("VNType")
             .appendingPathComponent("config.json")
+    }
+
+    static func defaultMacrosURL() -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("VNType")
+            .appendingPathComponent("macros.txt")
     }
 }

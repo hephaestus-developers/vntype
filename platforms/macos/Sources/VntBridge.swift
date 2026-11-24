@@ -189,4 +189,76 @@ final class VntBridge {
         }
         return !effects.isEmpty && !forwardOriginal
     }
+
+    /// Khả năng giao diện tương ứng với hệ điều hành macOS từ lõi Rust.
+    struct SettingsCapabilities: Decodable {
+        let supports_autostart: Bool
+        let supports_daemon_ipc: Bool
+        let supports_input_framework_status: Bool
+        let supports_accessibility_check: Bool
+        let supports_macro_file_editor: Bool
+        let supports_switch_key: Bool
+        let supports_excluded_apps: Bool
+    }
+
+    /// Trả về `SettingsCapabilities` của macOS qua FFI.
+    static func settingsCapabilities() -> SettingsCapabilities? {
+        guard let ptr = vnt_settings_capabilities_json() else { return nil }
+        let json = String(cString: ptr)
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(SettingsCapabilities.self, from: data)
+    }
+
+    /// Trả về danh sách `(key, displayName)` các bảng mã được hỗ trợ từ lõi Rust.
+    static func charsetList() -> [(key: String, name: String)] {
+        guard let ptr = vnt_charset_list() else { return [] }
+        return String(cString: ptr)
+            .split(separator: "\n")
+            .compactMap { line in
+                let parts = line.split(separator: "\t", maxSplits: 1)
+                guard parts.count == 2 else { return nil }
+                return (String(parts[0]), String(parts[1]))
+            }
+    }
+
+    /// Đọc JSON cấu hình từ `configPath` (hoặc đường dẫn mặc định) qua `vntype-ffi`.
+    static func loadSettingsJSON(configPath: String?) -> String? {
+        let rawPtr: UnsafeMutablePointer<CChar>? = if let path = configPath {
+            path.withCString { vnt_settings_load_json($0) }
+        } else {
+            vnt_settings_load_json(nil)
+        }
+        guard let ptr = rawPtr else { return nil }
+        defer { vnt_free_string(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// Kiểm tra hợp lệ và lưu nguyên tử bản vá JSON xuống `configPath` qua `vntype-ffi`.
+    static func saveSettingsJSON(_ json: String, configPath: String?) -> Bool {
+        if let path = configPath {
+            return path.withCString { p in
+                json.withCString { j in vnt_settings_validate_and_save_json(p, j) }
+            }
+        }
+        return json.withCString { vnt_settings_validate_and_save_json(nil, $0) }
+    }
+
+    /// Đảm bảo tệp `macros.txt` tồn tại trên đĩa.
+    @discardableResult
+    static func ensureMacrosFile(configPath: String?) -> Bool {
+        if let path = configPath {
+            return path.withCString { vnt_macros_ensure_file($0) }
+        }
+        return vnt_macros_ensure_file(nil)
+    }
+
+    /// Đếm số lượng quy tắc gõ tắt đang có trong `macros.txt`.
+    static func macroEntryCount(configPath: String?) -> Int {
+        let count: Int32 = if let path = configPath {
+            path.withCString { vnt_macros_entry_count($0) }
+        } else {
+            vnt_macros_entry_count(nil)
+        }
+        return max(0, Int(count))
+    }
 }
