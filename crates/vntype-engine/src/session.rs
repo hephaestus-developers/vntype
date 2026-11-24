@@ -343,6 +343,8 @@ impl ImeSession {
         TransformOptions {
             tone_style: self.profile.tone_style.unwrap_or(c.tone_style),
             spell_check: self.profile.spell_check.unwrap_or(c.spell_check),
+            free_typing: c.free_typing,
+            auto_restore_keys: c.auto_restore_keys,
             w_as_u: c.w_as_u && !url_safe,
             bracket_keys: c.bracket_keys && !url_safe,
             quick_telex: c.quick_telex && !url_safe,
@@ -467,6 +469,8 @@ impl ImeSession {
         let excluded = |a: &String| normalize_app_id(Some(a)) == key;
         self.enabled = if !key.is_empty() && c.excluded_apps.iter().any(excluded) {
             false
+        } else if !c.per_app_mode {
+            c.default_vietnamese
         } else if let (Some(v), false) = (self.profile.vietnamese, c.app_modes.contains_key(&key)) {
             v
         } else {
@@ -494,9 +498,14 @@ impl ImeSession {
     pub fn toggle_vietnamese(&mut self) -> Action {
         let act = self.flush();
         self.enabled = !self.enabled;
-        let app = normalize_app_id(self.ports.app.current_app().as_deref());
-        if !app.is_empty() {
-            self.config.app_modes.insert(app, self.enabled);
+        if self.config.per_app_mode {
+            let app = normalize_app_id(self.ports.app.current_app().as_deref());
+            if !app.is_empty() {
+                self.config.app_modes.insert(app, self.enabled);
+                self.ports.config.save(&self.config);
+            }
+        } else {
+            self.config.default_vietnamese = self.enabled;
             self.ports.config.save(&self.config);
         }
         act

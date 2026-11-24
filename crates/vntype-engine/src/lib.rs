@@ -16,6 +16,6 @@ pub use macro_table::{expand_single_macro, match_phrase_macro, py_isupper};
 pub use ports::{
     AppContext, AppProfile, CONFIG_SCHEMA_VERSION, Config, ConfigStore, Dictionary, JsonFileConfigStore,
     MemoryConfigStore, OutputMode, Ports, SharedConfigStore, StaticAppContext, SurroundingText,
-    UnicodeForm, app_aliases, default_app_profiles, normalize_app_id, resolve_profile,
+    SwitchKey, UnicodeForm, app_aliases, default_app_profiles, normalize_app_id, resolve_profile,
 };
 pub use session::{Action, FieldKind, ImeSession, Key, KeyEvent};

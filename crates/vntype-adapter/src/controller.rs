@@ -305,9 +305,18 @@ impl AdapterController {
     }
 
     fn process_key_immediate(&mut self, event: &KeyEvent, raw_keycode: u32) -> Vec<Effect> {
-        // Phím nóng chuẩn toàn cục Alt+, để bật/tắt tiếng Việt
-        if event.alt && !event.ctrl && !event.meta && event.key == vntype_engine::Key::Char(',') {
-            return self.toggle_vietnamese();
+        // Phím nóng chuyển Việt/Anh theo cấu hình `switch_key`
+        if event.alt && !event.ctrl && !event.meta {
+            let matched = match self.session.config().switch_key {
+                vntype_engine::SwitchKey::AltComma => event.key == vntype_engine::Key::Char(','),
+                vntype_engine::SwitchKey::AltZ => {
+                    matches!(event.key, vntype_engine::Key::Char('z' | 'Z'))
+                }
+                vntype_engine::SwitchKey::CtrlShift => false,
+            };
+            if matched {
+                return self.toggle_vietnamese();
+            }
         }
 
         let display = self.session.display();

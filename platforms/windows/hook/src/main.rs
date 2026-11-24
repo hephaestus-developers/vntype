@@ -71,8 +71,39 @@ fn main() {
     {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicIsize, Ordering};
-        use windows_sys::Win32::Foundation::HWND;
-        use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HWND,
+        };
+        use windows_sys::Win32::System::Threading::CreateMutexW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+
+        struct SingleInstanceGuard(HANDLE);
+        impl Drop for SingleInstanceGuard {
+            fn drop(&mut self) {
+                if !self.0.is_null() {
+                    unsafe {
+                        CloseHandle(self.0);
+                    }
+                }
+            }
+        }
+
+        let mutex_name: Vec<u16> = "Local\\VNTypeHookSingleInstance\0".encode_utf16().collect();
+        let mutex = unsafe { CreateMutexW(core::ptr::null(), 1, mutex_name.as_ptr()) };
+        if !mutex.is_null() && unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            let tray_class: Vec<u16> = "VNTypeTrayWindow\0".encode_utf16().collect();
+            let existing = unsafe { FindWindowW(tray_class.as_ptr(), core::ptr::null()) };
+            if !existing.is_null() {
+                unsafe {
+                    PostMessageW(existing, crate::tray::win_tray::WM_SHOW_SETTINGS, 0, 0);
+                }
+            }
+            unsafe {
+                CloseHandle(mutex);
+            }
+            return;
+        }
+        let _single_instance_guard = SingleInstanceGuard(mutex);
 
         let bridge = vntype_settings::gui::win_gui::HookGuiBridge::new();
         let tray_hwnd = Arc::new(AtomicIsize::new(0));

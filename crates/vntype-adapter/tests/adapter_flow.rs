@@ -13,8 +13,8 @@ fn end_to_end_surrogate_surrounding_hotkey_and_config_patch() {
         Effect::ReplaceText { delete_utf16: 3, delete_chars: 3, insert, .. } if insert == "ếng"
     )));
 
-    // Đổi cấu hình sang VNI qua JSON patch và kiểm tra Alt+, tăng config_version
-    assert!(ctrl.apply_config_json(r#"{"input_method": "vni"}"#).is_some());
+    // Đổi cấu hình sang VNI + switch_key Alt+, qua JSON patch và kiểm tra Alt+, tăng config_version
+    assert!(ctrl.apply_config_json(r#"{"input_method": "vni", "switch_key": "alt_comma"}"#).is_some());
     ctrl.focus_changed(Some("chrome"));
     let v0 = ctrl.config_version();
     let mut alt_comma = KeyEvent::ch(',');

@@ -31,8 +31,10 @@ fn default_charset() -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SwitchKey {
-    /// Tổ hợp phím `Alt + ,` (mặc định).
+    /// Tổ hợp phím `Ctrl + Shift` (mặc định).
     #[default]
+    CtrlShift,
+    /// Tổ hợp phím `Alt + ,` (tương thích cấu hình cũ).
     AltComma,
     /// Tổ hợp phím `Alt + Z`.
     AltZ,
@@ -143,6 +145,22 @@ pub struct Config {
     pub tone_style: ToneStyle,
     /// Bật kiểm tra chính tả tiếng Việt.
     pub spell_check: bool,
+    /// Cho phép gõ tự do (không chặn đặt dấu khi từ chưa hợp lệ).
+    pub free_typing: bool,
+    /// Tự động khôi phục phím thô với từ sai chính tả.
+    pub auto_restore_keys: bool,
+    /// Luôn dùng clipboard để dán ký tự Unicode trên Windows.
+    pub always_use_clipboard_unicode: bool,
+    /// Hiện thông báo phản hồi khi chuyển trạng thái gõ.
+    pub show_feedback_notification: bool,
+    /// Phát âm thanh chuông khi chuyển ngôn ngữ Việt / Anh.
+    pub beep_on_switch: bool,
+    /// Tự động mở hộp thoại cài đặt khi khởi động.
+    pub show_dialog_on_startup: bool,
+    /// Bật/tắt chế độ gõ riêng theo từng ứng dụng.
+    pub per_app_mode: bool,
+    /// Hiển thị giao diện tiếng Việt (tắt để dùng tiếng Anh).
+    pub vietnamese_interface: bool,
     /// Cho phép `w` đứng riêng biến thành `ư`.
     pub w_as_u: bool,
     /// Cho phép phím `[` và `]` biến thành `ơ` và `ư`.
@@ -195,6 +213,14 @@ impl Default for Config {
             input_method: "telex".into(),
             tone_style: ToneStyle::New,
             spell_check: true,
+            free_typing: false,
+            auto_restore_keys: true,
+            always_use_clipboard_unicode: false,
+            show_feedback_notification: false,
+            beep_on_switch: false,
+            show_dialog_on_startup: false,
+            per_app_mode: true,
+            vietnamese_interface: true,
             w_as_u: false,
             bracket_keys: false,
             quick_telex: false,
@@ -214,7 +240,7 @@ impl Default for Config {
             smart_caps: false,
             unicode_form: UnicodeForm::Nfc,
             charset: default_charset(),
-            switch_key: SwitchKey::AltComma,
+            switch_key: SwitchKey::CtrlShift,
             schema_version: CONFIG_SCHEMA_VERSION,
         }
     }

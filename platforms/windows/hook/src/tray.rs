@@ -40,6 +40,7 @@ impl TrayStatus {
     /// Nhãn phím tắt hiện tại (`"Alt+,"` hoặc `"Alt+Z"`).
     pub fn switch_key_label(&self) -> &'static str {
         match self.switch_key {
+            SwitchKey::CtrlShift => "Ctrl+Shift",
             SwitchKey::AltComma => "Alt+,",
             SwitchKey::AltZ => "Alt+Z",
         }
@@ -73,7 +74,8 @@ pub mod win_tray {
         MOD_ALT, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
     };
     use windows_sys::Win32::UI::Shell::{
-        NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW,
+        NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_INFO, NIIF_NOSOUND, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+        NOTIFYICONDATAW, Shell_NotifyIconW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
@@ -94,6 +96,8 @@ pub mod win_tray {
     pub const WM_QUIT_APP: u32 = WM_APP + 3;
     /// Thông điệp yêu cầu luồng Tray/Hook chuyển đổi trạng thái bật/tắt Tiếng Việt.
     pub const WM_TOGGLE_VN: u32 = WM_APP + 4;
+    /// Thông điệp yêu cầu mở cửa sổ cài đặt từ tiến trình thứ hai (single-instance).
+    pub const WM_SHOW_SETTINGS: u32 = WM_APP + 5;
     const HOTKEY_SWITCH_ID: i32 = 1;
     static HOTKEY_REGISTERED: AtomicBool = AtomicBool::new(false);
     const TRAY_ICON_ID: u32 = 1;
@@ -150,11 +154,17 @@ pub mod win_tray {
         w
     }
 
-    fn fill_tip(buf: &mut [u16; 128], text: &str) {
+    fn fill_wide_buf<const N: usize>(buf: &mut [u16; N], text: &str) {
         buf.fill(0);
-        for (dst, src) in buf.iter_mut().take(127).zip(text.encode_utf16()) {
-            *dst = src;
+        if N > 1 {
+            for (dst, src) in buf.iter_mut().take(N - 1).zip(text.encode_utf16()) {
+                *dst = src;
+            }
         }
+    }
+
+    fn fill_tip(buf: &mut [u16; 128], text: &str) {
+        fill_wide_buf(buf, text);
     }
 
     fn create_letter_icon(letter: &str, bg_color: u32, fg_color: u32) -> HICON {
@@ -287,6 +297,21 @@ pub mod win_tray {
             }
         }
 
+        /// Hiển thị thông báo phản hồi dạng balloon trên khay hệ thống.
+        pub fn show_balloon(&self, title: &str, msg: &str) {
+            unsafe {
+                let mut nid: NOTIFYICONDATAW = core::mem::zeroed();
+                nid.cbSize = core::mem::size_of::<NOTIFYICONDATAW>() as u32;
+                nid.hWnd = self.hwnd;
+                nid.uID = TRAY_ICON_ID;
+                nid.uFlags = NIF_INFO;
+                nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
+                fill_wide_buf(&mut nid.szInfoTitle, title);
+                fill_wide_buf(&mut nid.szInfo, msg);
+                Shell_NotifyIconW(NIM_MODIFY, &mut nid);
+            }
+        }
+
         /// Trả về handle cửa sổ ẩn của tray dưới dạng `isize` để gửi thông điệp điều khiển liên luồng.
         pub fn hwnd_raw(&self) -> isize {
             self.hwnd as isize
@@ -294,13 +319,14 @@ pub mod win_tray {
 
         /// Đăng ký phím tắt toàn cục (`RegisterHotKey`) để hoạt động ổn định cả trong cửa sổ quyền Admin.
         pub fn register_switch_hotkey(&self, switch_key: SwitchKey) {
-            let vk = match switch_key {
-                SwitchKey::AltComma => 0xBCu32,
-                SwitchKey::AltZ => 0x5Au32,
-            };
             unsafe {
                 UnregisterHotKey(self.hwnd, HOTKEY_SWITCH_ID);
-                let ok = RegisterHotKey(self.hwnd, HOTKEY_SWITCH_ID, MOD_ALT | MOD_NOREPEAT, vk) != 0;
+                let ok = match switch_key {
+                    SwitchKey::AltZ => {
+                        RegisterHotKey(self.hwnd, HOTKEY_SWITCH_ID, MOD_ALT | MOD_NOREPEAT, 0x5Au32) != 0
+                    }
+                    SwitchKey::CtrlShift | SwitchKey::AltComma => false,
+                };
                 HOTKEY_REGISTERED.store(ok, Ordering::Release);
             }
         }
@@ -444,6 +470,10 @@ pub mod win_tray {
         }
         if msg == WM_TOGGLE_VN {
             push_action(hwnd, TrayMenuAction::ToggleVietnamese);
+            return 0;
+        }
+        if msg == WM_SHOW_SETTINGS {
+            push_action(hwnd, TrayMenuAction::OpenSettingsWindow);
             return 0;
         }
         if msg == WM_HOTKEY && wparam as i32 == HOTKEY_SWITCH_ID {

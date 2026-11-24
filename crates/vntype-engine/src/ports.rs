@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 pub use vntype_config::{
-    AppProfile, CONFIG_SCHEMA_VERSION, Config, OutputMode, UnicodeForm, app_aliases, default_app_profiles,
-    normalize_app_id, resolve_profile, save_config_atomic,
+    AppProfile, CONFIG_SCHEMA_VERSION, Config, OutputMode, SwitchKey, UnicodeForm, app_aliases,
+    default_app_profiles, normalize_app_id, resolve_profile, save_config_atomic,
 };
 
 /// Cổng đọc và lưu cấu hình người dùng.

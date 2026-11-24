@@ -27,6 +27,10 @@ pub struct TransformOptions {
     pub tone_style: ToneStyle,
     /// Bật kiểm tra chính tả để tự động khôi phục phím thô khi từ không phải tiếng Việt hợp lệ.
     pub spell_check: bool,
+    /// Cho phép gõ tự do (không chặn đặt dấu khi từ chưa hợp lệ).
+    pub free_typing: bool,
+    /// Tự động khôi phục phím thô với từ sai chính tả.
+    pub auto_restore_keys: bool,
     /// Cho phép phím `w` đứng riêng biến thành `ư` trong Telex.
     pub w_as_u: bool,
     /// Cho phép phím `[` và `]` biến thành `ơ` và `ư` trong Telex.
@@ -42,6 +46,8 @@ impl Default for TransformOptions {
         Self {
             tone_style: ToneStyle::Old,
             spell_check: true,
+            free_typing: false,
+            auto_restore_keys: true,
             w_as_u: true,
             bracket_keys: false,
             quick_telex: false,
@@ -291,6 +297,7 @@ fn step(st: &mut WordState, k: char, im: &InputMethodSpec, opt: &TransformOption
         }
         let lowered = toneless_lower(&st.letters);
         if opt.spell_check
+            && !opt.free_typing
             && (!vs::tone_allowed_with(&lowered, t, opt.allow_coda_k)
                 || vs::check_with(&lowered, t, opt.allow_coda_k) == Status::Invalid)
         {
@@ -347,7 +354,10 @@ fn step(st: &mut WordState, k: char, im: &InputMethodSpec, opt: &TransformOption
                     st.transformed = true;
                     return;
                 }
-                if !opt.spell_check || status(&st.letters, st.tone, opt) != Status::Invalid {
+                if !opt.spell_check
+                    || opt.free_typing
+                    || status(&st.letters, st.tone, opt) != Status::Invalid
+                {
                     st.transformed = true;
                     return;
                 }
@@ -385,7 +395,7 @@ fn step(st: &mut WordState, k: char, im: &InputMethodSpec, opt: &TransformOption
                 return;
             }
 
-            if !pending.is_empty() && !opt.spell_check {
+            if !pending.is_empty() && (!opt.spell_check || opt.free_typing) {
                 for &(i, m) in &pending[0] {
                     st.letters[i].mark = Some(m);
                 }
@@ -415,7 +425,7 @@ fn step(st: &mut WordState, k: char, im: &InputMethodSpec, opt: &TransformOption
             Letter { base, upper: k != lk, mark: Some(mark), from_standalone: true, auto_horn: false };
         let mut cand = st.letters.clone();
         let _ = cand.try_push(letter);
-        if !opt.spell_check || status(&cand, st.tone, opt) != Status::Invalid {
+        if !opt.spell_check || opt.free_typing || status(&cand, st.tone, opt) != Status::Invalid {
             let _ = st.letters.try_push(letter);
             st.transformed = true;
             return;
@@ -428,7 +438,7 @@ fn step(st: &mut WordState, k: char, im: &InputMethodSpec, opt: &TransformOption
 fn result(st: &WordState, raw: &[char], opt: &TransformOptions, is_final: bool) -> TransformResult {
     let text = render(st, opt.tone_style);
     let stt = status_for(&st.letters, st.tone, opt, is_final);
-    if opt.spell_check && st.transformed {
+    if opt.spell_check && opt.auto_restore_keys && st.transformed {
         let (start, end) = cluster_span(&st.letters);
         let raw_s: String = raw.iter().collect();
         let low = raw_s.to_lowercase();

@@ -96,6 +96,7 @@ pub mod win_gui {
 
     #[cfg(windows)]
     mod win32_impl {
+        use std::cell::RefCell;
         use std::ptr::{null, null_mut};
         use std::sync::Arc;
         use std::sync::atomic::Ordering;
@@ -104,9 +105,10 @@ pub mod win_gui {
         use vntype_core::{CHARSETS, charset_display_name};
         use vntype_settings_core::{PlatformCapabilities, SettingsViewModel};
         use vntype_win_ipc::win_shm::SharedRoutingMapping;
-        use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+        use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
         use windows_sys::Win32::Graphics::Gdi::{
-            COLOR_BTNFACE, DEFAULT_GUI_FONT, DeleteObject, GetStockObject, HFONT,
+            CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_BTNFACE, CreateFontW, DEFAULT_CHARSET,
+            DEFAULT_PITCH, DeleteObject, FF_SWISS, FW_NORMAL, HFONT, InvalidateRect, OUT_DEFAULT_PRECIS,
         };
         use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
         use windows_sys::Win32::System::Registry::{
@@ -116,17 +118,19 @@ pub mod win_gui {
         use windows_sys::Win32::UI::Controls::{
             ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx,
         };
+        use windows_sys::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
         use windows_sys::Win32::UI::Shell::ShellExecuteW;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_AUTORADIOBUTTON, BS_DEFPUSHBUTTON, BS_GROUPBOX,
             BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBS_DROPDOWNLIST, CreateWindowExW,
-            DefWindowProcW, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE,
-            GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, IDC_ARROW,
-            LoadCursorW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, MessageBoxW, PostQuitMessage,
-            RegisterClassExW, SW_HIDE, SW_SHOWNORMAL, SendMessageW, SetWindowLongPtrW, SetWindowTextW,
-            ShowWindow, TranslateMessage, WM_APP, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_SETFONT,
-            WNDCLASSEXW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_GROUP, WS_MINIMIZEBOX, WS_OVERLAPPED,
-            WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+            DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetMessageW, GetSystemMetrics,
+            GetWindowLongPtrW, HICON, IDC_ARROW, IMAGE_ICON, LR_DEFAULTCOLOR, LoadCursorW, LoadImageW,
+            MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW,
+            SM_CXICON, SM_CXSMICON, SM_CYICON, SM_CYSMICON, SW_HIDE, SW_SHOWNORMAL, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
+            SetWindowTextW, ShowWindow, TranslateMessage, WM_APP, WM_CLOSE, WM_COMMAND, WM_DESTROY,
+            WM_DPICHANGED, WM_SETFONT, WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_GROUP, WS_MINIMIZEBOX,
+            WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
         };
 
         pub const WM_BRIDGE_WAKE: u32 = WM_APP + 1;
@@ -150,6 +154,11 @@ pub mod win_gui {
         const ID_CHK_EDIT_PREV: i32 = 207;
         const ID_CHK_AUTO_CAP: i32 = 208;
         const ID_CHK_SMART_CAPS: i32 = 209;
+        const ID_CHK_FREE_TYPING: i32 = 210;
+        const ID_CHK_AUTO_RESTORE: i32 = 211;
+        const ID_CHK_CLIPBOARD_UNICODE: i32 = 212;
+        const ID_CHK_FEEDBACK_NOTIFY: i32 = 213;
+        const ID_CHK_BEEP_SWITCH: i32 = 214;
 
         const ID_CHK_MACRO_ENABLED: i32 = 301;
         const ID_CHK_MACRO_UNDO: i32 = 302;
@@ -159,7 +168,9 @@ pub mod win_gui {
 
         const ID_CHK_AUTOSTART: i32 = 401;
         const ID_BTN_TOGGLE_MODE: i32 = 402;
-        const ID_EDIT_EXCLUDED: i32 = 403;
+        const ID_CHK_SHOW_ON_START: i32 = 404;
+        const ID_CHK_PER_APP_MODE: i32 = 405;
+        const ID_CHK_VIET_UI: i32 = 406;
 
         const ID_BTN_INFO: i32 = 501;
         const ID_BTN_DEFAULTS: i32 = 502;
@@ -175,7 +186,12 @@ pub mod win_gui {
             tone_new: HWND,
             tone_old: HWND,
             chk_default_vi: HWND,
+            chk_free_typing: HWND,
+            chk_clipboard_unicode: HWND,
             chk_spell: HWND,
+            chk_auto_restore: HWND,
+            chk_feedback_notify: HWND,
+            chk_beep_switch: HWND,
             chk_w_as_u: HWND,
             chk_brackets: HWND,
             chk_quick_telex: HWND,
@@ -188,10 +204,12 @@ pub mod win_gui {
             chk_macro_digits: HWND,
             chk_macro_off: HWND,
             lbl_macro_count: HWND,
+            chk_show_on_start: HWND,
             chk_autostart: HWND,
+            chk_per_app_mode: HWND,
+            chk_viet_ui: HWND,
             btn_toggle_mode: HWND,
             lbl_ipc_status: HWND,
-            edit_excluded: HWND,
             btn_revert: HWND,
         }
 
@@ -206,12 +224,110 @@ pub mod win_gui {
             allow_close: bool,
             font: HFONT,
             controls: Option<Controls>,
+            ctrl_layouts: Vec<(HWND, i32, i32, i32, i32)>,
+            i18n_ctrls: Vec<(HWND, &'static str, &'static str)>,
+        }
+
+        thread_local! {
+            static PENDING_LAYOUTS: RefCell<Vec<(HWND, i32, i32, i32, i32)>> = const { RefCell::new(Vec::new()) };
         }
 
         fn to_wide(s: &str) -> Vec<u16> {
             let mut w: Vec<u16> = s.encode_utf16().collect();
             w.push(0);
             w
+        }
+
+        static DPI_SCALE_NUMERATOR: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(96);
+
+        fn set_window_dpi(dpi: u32) {
+            DPI_SCALE_NUMERATOR.store(dpi.max(96), Ordering::Release);
+        }
+
+        fn current_window_dpi() -> u32 {
+            DPI_SCALE_NUMERATOR.load(Ordering::Acquire).max(96)
+        }
+
+        fn scale_px(v: i32) -> i32 {
+            let dpi = current_window_dpi() as f32;
+            ((v as f32) * (dpi / 96.0)).round() as i32
+        }
+
+        unsafe fn create_ui_font() -> HFONT {
+            unsafe {
+                CreateFontW(
+                    -scale_px(12),
+                    0,
+                    0,
+                    0,
+                    FW_NORMAL as i32,
+                    0,
+                    0,
+                    0,
+                    DEFAULT_CHARSET as u32,
+                    OUT_DEFAULT_PRECIS as u32,
+                    CLIP_DEFAULT_PRECIS as u32,
+                    CLEARTYPE_QUALITY as u32,
+                    (DEFAULT_PITCH | FF_SWISS) as u32,
+                    to_wide("Segoe UI").as_ptr(),
+                )
+            }
+        }
+
+        unsafe fn apply_dpi_layout(
+            hwnd: HWND,
+            state: &mut WindowState,
+            new_dpi: u32,
+            suggested_rect: Option<&RECT>,
+        ) {
+            let new_dpi = new_dpi.max(96);
+            set_window_dpi(new_dpi);
+
+            let new_font = unsafe { create_ui_font() };
+            if !new_font.is_null() {
+                let old_font = state.font;
+                state.font = new_font;
+                for &(ctrl, _, _, _, _) in &state.ctrl_layouts {
+                    unsafe { SendMessageW(ctrl, WM_SETFONT, new_font as WPARAM, 0) };
+                }
+                if !old_font.is_null() {
+                    unsafe { DeleteObject(old_font as _) };
+                }
+            }
+
+            for &(ctrl, x, y, w, h) in &state.ctrl_layouts {
+                unsafe {
+                    SetWindowPos(
+                        ctrl,
+                        null_mut(),
+                        scale_px(x),
+                        scale_px(y),
+                        scale_px(w),
+                        scale_px(h),
+                        SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                }
+            }
+
+            let mut rect = RECT { left: 0, top: 0, right: scale_px(584), bottom: scale_px(548) };
+            let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+            unsafe { AdjustWindowRectExForDpi(&mut rect, style, 0, 0, new_dpi) };
+            let (wx, wy, flags) = match suggested_rect {
+                Some(r) => (r.left, r.top, SWP_NOZORDER | SWP_NOACTIVATE),
+                None => (0, 0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE),
+            };
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    wx,
+                    wy,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                    flags,
+                );
+                InvalidateRect(hwnd, null(), 1);
+            }
         }
 
         unsafe fn create_ctrl(
@@ -235,18 +351,21 @@ pub mod win_gui {
                     cls.as_ptr(),
                     txt.as_ptr(),
                     WS_CHILD | WS_VISIBLE | style,
-                    x,
-                    y,
-                    w,
-                    h,
+                    scale_px(x),
+                    scale_px(y),
+                    scale_px(w),
+                    scale_px(h),
                     parent,
                     id as _,
                     GetModuleHandleW(null()),
                     null(),
                 )
             };
-            if !hwnd.is_null() && !font.is_null() {
-                unsafe { SendMessageW(hwnd, WM_SETFONT, font as WPARAM, 1) };
+            if !hwnd.is_null() {
+                if !font.is_null() {
+                    unsafe { SendMessageW(hwnd, WM_SETFONT, font as WPARAM, 1) };
+                }
+                PENDING_LAYOUTS.with(|layouts| layouts.borrow_mut().push((hwnd, x, y, w, h)));
             }
             hwnd
         }
@@ -257,27 +376,6 @@ pub mod win_gui {
 
         unsafe fn is_checked(hwnd: HWND) -> bool {
             unsafe { SendMessageW(hwnd, BM_GETCHECK, 0, 0) != 0 }
-        }
-
-        unsafe fn read_window_text(hwnd: HWND) -> String {
-            let len = unsafe { GetWindowTextLengthW(hwnd) };
-            if len <= 0 {
-                return String::new();
-            }
-            let mut buf = vec![0u16; (len + 1) as usize];
-            let read = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1) };
-            String::from_utf16_lossy(&buf[..read as usize])
-        }
-
-        fn parse_excluded_apps(text: &str) -> Vec<String> {
-            let mut apps = Vec::new();
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !apps.iter().any(|e| e == trimmed) {
-                    apps.push(trimmed.to_string());
-                }
-            }
-            apps
         }
 
         fn is_autostart_enabled() -> bool {
@@ -330,6 +428,25 @@ pub mod win_gui {
             }
         }
 
+        fn apply_interface_language(state: &WindowState) {
+            let vi = state.vm.draft.vietnamese_interface;
+            unsafe {
+                for &(ctrl, vi_txt, en_txt) in &state.i18n_ctrls {
+                    let w = to_wide(if vi { vi_txt } else { en_txt });
+                    SetWindowTextW(ctrl, w.as_ptr());
+                }
+            }
+            if let Some(ref c) = state.controls {
+                let count = state.vm.macro_entry_count();
+                let count_str =
+                    if vi { format!("({count} quy tắc)") } else { format!("({count} rules)") };
+                unsafe {
+                    SetWindowTextW(c.lbl_macro_count, to_wide(&count_str).as_ptr());
+                }
+            }
+            update_bridge_labels(state);
+        }
+
         fn sync_ui_from_vm(state: &WindowState) {
             let Some(ref c) = state.controls else { return };
             let d = &state.vm.draft;
@@ -340,13 +457,18 @@ pub mod win_gui {
                 let im_idx = INPUT_METHODS.iter().position(|&(k, _)| k == d.input_method).unwrap_or(0);
                 SendMessageW(c.input_method, CB_SETCURSEL, im_idx, 0);
 
-                set_checked(c.switch_comma, d.switch_key == SwitchKey::AltComma);
+                set_checked(c.switch_comma, d.switch_key != SwitchKey::AltZ);
                 set_checked(c.switch_z, d.switch_key == SwitchKey::AltZ);
                 set_checked(c.tone_new, d.tone_style == ToneStyle::New);
                 set_checked(c.tone_old, d.tone_style == ToneStyle::Old);
 
                 set_checked(c.chk_default_vi, d.default_vietnamese);
+                set_checked(c.chk_free_typing, d.free_typing);
+                set_checked(c.chk_clipboard_unicode, d.always_use_clipboard_unicode);
                 set_checked(c.chk_spell, d.spell_check);
+                set_checked(c.chk_auto_restore, d.auto_restore_keys);
+                set_checked(c.chk_feedback_notify, d.show_feedback_notification);
+                set_checked(c.chk_beep_switch, d.beep_on_switch);
                 set_checked(c.chk_w_as_u, d.w_as_u);
                 set_checked(c.chk_brackets, d.bracket_keys);
                 set_checked(c.chk_quick_telex, d.quick_telex);
@@ -360,18 +482,14 @@ pub mod win_gui {
                 set_checked(c.chk_macro_digits, d.macro_digits);
                 set_checked(c.chk_macro_off, d.macro_in_off_mode);
 
-                let count_txt = to_wide(&format!("({} quy tắc)", state.vm.macro_entry_count()));
-                SetWindowTextW(c.lbl_macro_count, count_txt.as_ptr());
-
+                set_checked(c.chk_show_on_start, d.show_dialog_on_startup);
                 if state.caps.supports_autostart && !c.chk_autostart.is_null() {
                     set_checked(c.chk_autostart, is_autostart_enabled());
                 }
-                if state.caps.supports_excluded_apps && !c.edit_excluded.is_null() {
-                    let joined = to_wide(&d.excluded_apps.join("\r\n"));
-                    SetWindowTextW(c.edit_excluded, joined.as_ptr());
-                }
+                set_checked(c.chk_per_app_mode, d.per_app_mode);
+                set_checked(c.chk_viet_ui, d.vietnamese_interface);
 
-                update_bridge_labels(state);
+                apply_interface_language(state);
                 windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(
                     c.btn_revert,
                     i32::from(state.vm.is_dirty()),
@@ -381,6 +499,7 @@ pub mod win_gui {
 
         fn update_bridge_labels(state: &WindowState) {
             let Some(ref c) = state.controls else { return };
+            let vi_ui = state.vm.draft.vietnamese_interface;
             unsafe {
                 if !c.btn_toggle_mode.is_null() {
                     let vi = state
@@ -388,20 +507,30 @@ pub mod win_gui {
                         .as_ref()
                         .map(|b| b.is_vietnamese_enabled())
                         .unwrap_or(state.vm.draft.default_vietnamese);
-                    let lbl = to_wide(if vi {
-                        "Đang bật: Tiếng Việt"
+                    let lbl = to_wide(if vi_ui {
+                        if vi { "Đang bật: Tiếng Việt" } else { "Đang tắt: Tiếng Anh" }
+                    } else if vi {
+                        "Active: Vietnamese"
                     } else {
-                        "Đang tắt: Tiếng Anh"
+                        "Active: English"
                     });
                     SetWindowTextW(c.btn_toggle_mode, lbl.as_ptr());
                 }
                 if !c.lbl_ipc_status.is_null() {
-                    let tsf_active =
-                        state.routing.as_ref().map(|r| r.snapshot().tsf_pid != 0).unwrap_or(false);
-                    let txt = to_wide(if tsf_active {
-                        "TSF: Đang hoạt động"
+                    let tsf_active = state
+                        .routing
+                        .as_ref()
+                        .map(|r| {
+                            r.tsf_active.load(Ordering::Acquire) == 1
+                                && r.active_pid.load(Ordering::Acquire) != 0
+                        })
+                        .unwrap_or(false);
+                    let txt = to_wide(if vi_ui {
+                        if tsf_active { "TSF: Hoạt động" } else { "Hook: Portable" }
+                    } else if tsf_active {
+                        "TSF: Active"
                     } else {
-                        "Hook: Chế độ Portable"
+                        "Hook: Portable"
                     });
                     SetWindowTextW(c.lbl_ipc_status, txt.as_ptr());
                 }
@@ -421,7 +550,7 @@ pub mod win_gui {
                 }
 
                 state.vm.draft.switch_key =
-                    if is_checked(c.switch_z) { SwitchKey::AltZ } else { SwitchKey::AltComma };
+                    if is_checked(c.switch_z) { SwitchKey::AltZ } else { SwitchKey::CtrlShift };
                 state.vm.set_tone_style(if is_checked(c.tone_new) {
                     ToneStyle::New
                 } else {
@@ -429,7 +558,12 @@ pub mod win_gui {
                 });
 
                 state.vm.draft.default_vietnamese = is_checked(c.chk_default_vi);
+                state.vm.draft.free_typing = is_checked(c.chk_free_typing);
+                state.vm.draft.always_use_clipboard_unicode = is_checked(c.chk_clipboard_unicode);
                 state.vm.draft.spell_check = is_checked(c.chk_spell);
+                state.vm.draft.auto_restore_keys = is_checked(c.chk_auto_restore);
+                state.vm.draft.show_feedback_notification = is_checked(c.chk_feedback_notify);
+                state.vm.draft.beep_on_switch = is_checked(c.chk_beep_switch);
                 state.vm.draft.w_as_u = is_checked(c.chk_w_as_u);
                 state.vm.draft.bracket_keys = is_checked(c.chk_brackets);
                 state.vm.draft.quick_telex = is_checked(c.chk_quick_telex);
@@ -443,10 +577,9 @@ pub mod win_gui {
                 state.vm.draft.macro_digits = is_checked(c.chk_macro_digits);
                 state.vm.draft.macro_in_off_mode = is_checked(c.chk_macro_off);
 
-                if state.caps.supports_excluded_apps && !c.edit_excluded.is_null() {
-                    let txt = read_window_text(c.edit_excluded);
-                    state.vm.draft.excluded_apps = parse_excluded_apps(&txt);
-                }
+                state.vm.draft.show_dialog_on_startup = is_checked(c.chk_show_on_start);
+                state.vm.draft.per_app_mode = is_checked(c.chk_per_app_mode);
+                state.vm.draft.vietnamese_interface = is_checked(c.chk_viet_ui);
 
                 windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow(
                     c.btn_revert,
@@ -456,11 +589,39 @@ pub mod win_gui {
         }
 
         fn build_controls(hwnd: HWND, state: &mut WindowState) {
+            PENDING_LAYOUTS.with(|layouts| layouts.borrow_mut().clear());
+            state.i18n_ctrls.clear();
+            let mut i18n = |ctrl: HWND, vi: &'static str, en: &'static str| -> HWND {
+                if !ctrl.is_null() {
+                    state.i18n_ctrls.push((ctrl, vi, en));
+                }
+                ctrl
+            };
             let f = state.font;
             unsafe {
                 // 1. Khung Điều khiển
-                create_ctrl(hwnd, "BUTTON", "Điều khiển", BS_GROUPBOX as u32, 0, 12, 10, 560, 118, 0, f);
-                create_ctrl(hwnd, "STATIC", "Bảng mã:", 0, 0, 24, 34, 85, 20, 0, f);
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Điều khiển",
+                        BS_GROUPBOX as u32,
+                        0,
+                        12,
+                        10,
+                        560,
+                        118,
+                        0,
+                        f,
+                    ),
+                    "Điều khiển",
+                    "Control",
+                );
+                i18n(
+                    create_ctrl(hwnd, "STATIC", "Bảng mã:", 0, 0, 24, 34, 85, 20, 0, f),
+                    "Bảng mã:",
+                    "Charset:",
+                );
                 let charset = create_ctrl(
                     hwnd,
                     "COMBOBOX",
@@ -479,7 +640,11 @@ pub mod win_gui {
                     SendMessageW(charset, CB_ADDSTRING, 0, label.as_ptr() as LPARAM);
                 }
 
-                create_ctrl(hwnd, "STATIC", "Kiểu gõ:", 0, 0, 318, 34, 65, 20, 0, f);
+                i18n(
+                    create_ctrl(hwnd, "STATIC", "Kiểu gõ:", 0, 0, 318, 34, 65, 20, 0, f),
+                    "Kiểu gõ:",
+                    "Input method:",
+                );
                 let input_method = create_ctrl(
                     hwnd,
                     "COMBOBOX",
@@ -498,16 +663,20 @@ pub mod win_gui {
                     SendMessageW(input_method, CB_ADDSTRING, 0, wlabel.as_ptr() as LPARAM);
                 }
 
-                create_ctrl(hwnd, "STATIC", "Phím chuyển:", 0, 0, 24, 66, 85, 20, 0, f);
+                i18n(
+                    create_ctrl(hwnd, "STATIC", "Phím chuyển:", 0, 0, 24, 66, 85, 20, 0, f),
+                    "Phím chuyển:",
+                    "Switch key:",
+                );
                 let switch_comma = create_ctrl(
                     hwnd,
                     "BUTTON",
-                    "Alt + ,",
+                    "Ctrl + Shift",
                     (BS_AUTORADIOBUTTON as u32) | WS_GROUP | WS_TABSTOP,
                     0,
                     112,
                     64,
-                    80,
+                    100,
                     22,
                     ID_SWITCH_COMMA,
                     f,
@@ -518,7 +687,7 @@ pub mod win_gui {
                     "Alt + Z",
                     (BS_AUTORADIOBUTTON as u32) | WS_TABSTOP,
                     0,
-                    200,
+                    220,
                     64,
                     80,
                     22,
@@ -526,99 +695,148 @@ pub mod win_gui {
                     f,
                 );
 
-                create_ctrl(hwnd, "STATIC", "Đặt dấu:", 0, 0, 24, 94, 85, 20, 0, f);
-                let tone_new = create_ctrl(
-                    hwnd,
-                    "BUTTON",
-                    "Mới (hoà, thuý)",
-                    (BS_AUTORADIOBUTTON as u32) | WS_GROUP | WS_TABSTOP,
-                    0,
-                    112,
-                    92,
-                    140,
-                    22,
-                    ID_TONE_NEW,
-                    f,
+                i18n(
+                    create_ctrl(hwnd, "STATIC", "Đặt dấu:", 0, 0, 24, 94, 85, 20, 0, f),
+                    "Đặt dấu:",
+                    "Tone style:",
                 );
-                let tone_old = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let tone_new = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Mới (hoà, thuý)",
+                        (BS_AUTORADIOBUTTON as u32) | WS_GROUP | WS_TABSTOP,
+                        0,
+                        112,
+                        92,
+                        140,
+                        22,
+                        ID_TONE_NEW,
+                        f,
+                    ),
+                    "Mới (hoà, thuý)",
+                    "Modern (hoà, thuý)",
+                );
+                let tone_old = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Cũ (hòa, thúy)",
+                        (BS_AUTORADIOBUTTON as u32) | WS_TABSTOP,
+                        0,
+                        260,
+                        92,
+                        140,
+                        22,
+                        ID_TONE_OLD,
+                        f,
+                    ),
                     "Cũ (hòa, thúy)",
-                    (BS_AUTORADIOBUTTON as u32) | WS_TABSTOP,
-                    0,
-                    260,
-                    92,
-                    140,
-                    22,
-                    ID_TONE_OLD,
-                    f,
+                    "Classic (hòa, thúy)",
                 );
 
                 // 2. Khung Tùy chọn khác
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Tùy chọn khác",
+                        BS_GROUPBOX as u32,
+                        0,
+                        12,
+                        136,
+                        560,
+                        192,
+                        0,
+                        f,
+                    ),
                     "Tùy chọn khác",
-                    BS_GROUPBOX as u32,
-                    0,
-                    12,
-                    136,
-                    560,
-                    142,
-                    0,
-                    f,
+                    "Other options",
                 );
-                let chk_default_vi = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_default_vi = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bật tiếng Việt mặc định",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        156,
+                        256,
+                        22,
+                        ID_CHK_DEFAULT_VI,
+                        f,
+                    ),
                     "Bật tiếng Việt mặc định",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    156,
-                    250,
-                    22,
-                    ID_CHK_DEFAULT_VI,
-                    f,
+                    "Enable Vietnamese by default",
                 );
-                let chk_spell = create_ctrl(
-                    hwnd,
-                    "BUTTON",
-                    "Bật kiểm tra chính tả",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    180,
-                    250,
-                    22,
-                    ID_CHK_SPELL,
-                    f,
+                let chk_free_typing = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Cho phép gõ tự do",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        180,
+                        256,
+                        22,
+                        ID_CHK_FREE_TYPING,
+                        f,
+                    ),
+                    "Cho phép gõ tự do",
+                    "Allow free tone placement",
                 );
-                let chk_w_as_u = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_clipboard_unicode = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Luôn dùng clipboard cho Unicode",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        204,
+                        256,
+                        22,
+                        ID_CHK_CLIPBOARD_UNICODE,
+                        f,
+                    ),
+                    "Luôn dùng clipboard cho Unicode",
+                    "Always use clipboard for Unicode",
+                );
+                let chk_w_as_u = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Phím w đứng riêng thành ư (Telex)",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        228,
+                        256,
+                        22,
+                        ID_CHK_W_AS_U,
+                        f,
+                    ),
                     "Phím w đứng riêng thành ư (Telex)",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    204,
-                    250,
-                    22,
-                    ID_CHK_W_AS_U,
-                    f,
+                    "Standalone w -> ư (Telex)",
                 );
-                let chk_brackets = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_brackets = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Phím [ / ] thành ơ / ư (Telex)",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        252,
+                        256,
+                        22,
+                        ID_CHK_BRACKETS,
+                        f,
+                    ),
                     "Phím [ / ] thành ơ / ư (Telex)",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    228,
-                    250,
-                    22,
-                    ID_CHK_BRACKETS,
-                    f,
+                    "Keys [ / ] -> ơ / ư (Telex)",
                 );
                 let chk_quick_telex = create_ctrl(
                     hwnd,
@@ -627,172 +845,335 @@ pub mod win_gui {
                     (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
                     0,
                     24,
-                    252,
-                    250,
+                    276,
+                    256,
                     22,
                     ID_CHK_QUICK_TELEX,
                     f,
                 );
-
-                let chk_coda_k = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_coda_k = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Âm cuối k với sắc/nặng (Đắk Lắk)",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        300,
+                        256,
+                        22,
+                        ID_CHK_CODA_K,
+                        f,
+                    ),
                     "Âm cuối k với sắc/nặng (Đắk Lắk)",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    292,
-                    156,
-                    265,
-                    22,
-                    ID_CHK_CODA_K,
-                    f,
-                );
-                let chk_edit_prev = create_ctrl(
-                    hwnd,
-                    "BUTTON",
-                    "Sửa từ trước bằng Backspace",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    292,
-                    180,
-                    265,
-                    22,
-                    ID_CHK_EDIT_PREV,
-                    f,
-                );
-                let chk_auto_cap = create_ctrl(
-                    hwnd,
-                    "BUTTON",
-                    "Tự viết hoa đầu câu",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    292,
-                    204,
-                    265,
-                    22,
-                    ID_CHK_AUTO_CAP,
-                    f,
-                );
-                let chk_smart_caps = create_ctrl(
-                    hwnd,
-                    "BUTTON",
-                    "Giữ chữ hoa 2 chữ cái đầu",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    292,
-                    228,
-                    265,
-                    22,
-                    ID_CHK_SMART_CAPS,
-                    f,
+                    "Allow coda k with acute/dot (Đắk Lắk)",
                 );
 
-                // 3. Khung Tùy chọn gõ tắt (trái) & Hệ thống / Loại trừ (phải)
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_spell = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bật kiểm tra chính tả",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        156,
+                        270,
+                        22,
+                        ID_CHK_SPELL,
+                        f,
+                    ),
+                    "Bật kiểm tra chính tả",
+                    "Enable spell checking",
+                );
+                let chk_auto_restore = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Tự động khôi phục phím với từ sai",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        180,
+                        270,
+                        22,
+                        ID_CHK_AUTO_RESTORE,
+                        f,
+                    ),
+                    "Tự động khôi phục phím với từ sai",
+                    "Auto-restore keys for invalid words",
+                );
+                let chk_feedback_notify = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Hiện thông báo phản hồi",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        204,
+                        270,
+                        22,
+                        ID_CHK_FEEDBACK_NOTIFY,
+                        f,
+                    ),
+                    "Hiện thông báo phản hồi",
+                    "Show feedback notifications",
+                );
+                let chk_beep_switch = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bật chuông khi chuyển ngôn ngữ",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        228,
+                        270,
+                        22,
+                        ID_CHK_BEEP_SWITCH,
+                        f,
+                    ),
+                    "Bật chuông khi chuyển ngôn ngữ",
+                    "Beep on language switch",
+                );
+                let chk_edit_prev = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Sửa từ trước bằng Backspace",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        252,
+                        270,
+                        22,
+                        ID_CHK_EDIT_PREV,
+                        f,
+                    ),
+                    "Sửa từ trước bằng Backspace",
+                    "Edit previous word on Backspace",
+                );
+                let chk_auto_cap = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Tự viết hoa đầu câu",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        276,
+                        270,
+                        22,
+                        ID_CHK_AUTO_CAP,
+                        f,
+                    ),
+                    "Tự viết hoa đầu câu",
+                    "Auto-capitalize first letter",
+                );
+                let chk_smart_caps = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Giữ chữ hoa 2 chữ cái đầu",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        292,
+                        300,
+                        270,
+                        22,
+                        ID_CHK_SMART_CAPS,
+                        f,
+                    ),
+                    "Giữ chữ hoa 2 chữ cái đầu",
+                    "Keep initial double capitals",
+                );
+
+                // 3. Khung Tùy chọn gõ tắt (trái) & Hệ thống (phải)
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Tùy chọn gõ tắt",
+                        BS_GROUPBOX as u32,
+                        0,
+                        12,
+                        336,
+                        274,
+                        162,
+                        0,
+                        f,
+                    ),
                     "Tùy chọn gõ tắt",
-                    BS_GROUPBOX as u32,
-                    0,
-                    12,
-                    286,
-                    274,
-                    154,
-                    0,
-                    f,
+                    "Macro options",
                 );
-                let chk_macro_enabled = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_macro_enabled = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Cho phép gõ tắt",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        356,
+                        250,
+                        22,
+                        ID_CHK_MACRO_ENABLED,
+                        f,
+                    ),
                     "Cho phép gõ tắt",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    306,
-                    250,
-                    22,
-                    ID_CHK_MACRO_ENABLED,
-                    f,
+                    "Enable macros",
                 );
-                let chk_macro_undo = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_macro_undo = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Backspace hoàn tác gõ tắt",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        380,
+                        250,
+                        22,
+                        ID_CHK_MACRO_UNDO,
+                        f,
+                    ),
                     "Backspace hoàn tác gõ tắt",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    330,
-                    250,
-                    22,
-                    ID_CHK_MACRO_UNDO,
-                    f,
+                    "Backspace undoes macro",
                 );
-                let chk_macro_digits = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_macro_digits = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Cho phép chữ số trong gõ tắt",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        404,
+                        250,
+                        22,
+                        ID_CHK_MACRO_DIGITS,
+                        f,
+                    ),
                     "Cho phép chữ số trong gõ tắt",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    354,
-                    250,
-                    22,
-                    ID_CHK_MACRO_DIGITS,
-                    f,
+                    "Allow digits in macros",
                 );
-                let chk_macro_off = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let chk_macro_off = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bung gõ tắt khi tắt tiếng Việt",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        428,
+                        250,
+                        22,
+                        ID_CHK_MACRO_OFF,
+                        f,
+                    ),
                     "Bung gõ tắt khi tắt tiếng Việt",
-                    (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    378,
-                    250,
-                    22,
-                    ID_CHK_MACRO_OFF,
-                    f,
+                    "Expand macros in English mode",
                 );
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bảng gõ tắt (macros.txt)...",
+                        (BS_PUSHBUTTON as u32) | WS_TABSTOP,
+                        0,
+                        24,
+                        458,
+                        172,
+                        26,
+                        ID_BTN_OPEN_MACROS,
+                        f,
+                    ),
                     "Bảng gõ tắt (macros.txt)...",
-                    (BS_PUSHBUTTON as u32) | WS_TABSTOP,
-                    0,
-                    24,
-                    406,
-                    172,
-                    26,
-                    ID_BTN_OPEN_MACROS,
-                    f,
+                    "Macro table (macros.txt)...",
                 );
                 let lbl_macro_count =
-                    create_ctrl(hwnd, "STATIC", "(0 quy tắc)", 0, 0, 202, 411, 76, 18, 0, f);
+                    create_ctrl(hwnd, "STATIC", "(0 quy tắc)", 0, 0, 202, 463, 76, 18, 0, f);
 
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Hệ thống && Ứng dụng",
+                        BS_GROUPBOX as u32,
+                        0,
+                        298,
+                        336,
+                        274,
+                        162,
+                        0,
+                        f,
+                    ),
                     "Hệ thống && Ứng dụng",
-                    BS_GROUPBOX as u32,
-                    0,
-                    298,
-                    286,
-                    274,
-                    154,
-                    0,
-                    f,
+                    "System && Apps",
                 );
-                let chk_autostart = create_ctrl(
+                let chk_show_on_start = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bật hội thoại này khi khởi động",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        310,
+                        356,
+                        252,
+                        22,
+                        ID_CHK_SHOW_ON_START,
+                        f,
+                    ),
+                    "Bật hội thoại này khi khởi động",
+                    "Show this dialog on startup",
+                );
+                let chk_autostart = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Khởi động cùng Windows",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        310,
+                        380,
+                        252,
+                        22,
+                        ID_CHK_AUTOSTART,
+                        f,
+                    ),
+                    "Khởi động cùng Windows",
+                    "Start with Windows",
+                );
+                let chk_per_app_mode = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Bật/Tắt theo từng ứng dụng",
+                        (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
+                        0,
+                        310,
+                        404,
+                        252,
+                        22,
+                        ID_CHK_PER_APP_MODE,
+                        f,
+                    ),
+                    "Bật/Tắt theo từng ứng dụng",
+                    "Switch mode per application",
+                );
+                let chk_viet_ui = create_ctrl(
                     hwnd,
                     "BUTTON",
-                    "Khởi động cùng Windows",
+                    "Vietnamese interface",
                     (BS_AUTOCHECKBOX as u32) | WS_TABSTOP,
                     0,
                     310,
-                    306,
-                    240,
+                    428,
+                    252,
                     22,
-                    ID_CHK_AUTOSTART,
+                    ID_CHK_VIET_UI,
                     f,
                 );
                 let btn_toggle_mode = create_ctrl(
@@ -802,101 +1183,102 @@ pub mod win_gui {
                     (BS_PUSHBUTTON as u32) | WS_TABSTOP,
                     0,
                     310,
-                    332,
-                    148,
-                    24,
+                    458,
+                    150,
+                    26,
                     ID_BTN_TOGGLE_MODE,
                     f,
                 );
                 let lbl_ipc_status =
-                    create_ctrl(hwnd, "STATIC", "Hook: Portable", 0, 0, 464, 336, 102, 18, 0, f);
-                create_ctrl(hwnd, "STATIC", "Loại trừ (mỗi dòng 1 app):", 0, 0, 310, 362, 240, 18, 0, f);
-                let edit_excluded = create_ctrl(
-                    hwnd,
-                    "EDIT",
-                    "",
-                    (ES_MULTILINE as u32)
-                        | (ES_AUTOVSCROLL as u32)
-                        | (ES_AUTOHSCROLL as u32)
-                        | WS_BORDER
-                        | WS_VSCROLL
-                        | WS_TABSTOP,
-                    0,
-                    310,
-                    382,
-                    250,
-                    50,
-                    ID_EDIT_EXCLUDED,
-                    f,
-                );
+                    create_ctrl(hwnd, "STATIC", "Hook: Portable", 0, 0, 466, 463, 98, 18, 0, f);
 
                 // 4. Thanh nút dưới cùng
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
-                    "Thông tin",
-                    (BS_PUSHBUTTON as u32) | WS_TABSTOP,
-                    0,
-                    12,
-                    452,
-                    82,
-                    28,
-                    ID_BTN_INFO,
-                    f,
-                );
-                if state.bridge.is_some() {
+                i18n(
                     create_ctrl(
                         hwnd,
                         "BUTTON",
-                        "Kết thúc",
+                        "Thông tin",
                         (BS_PUSHBUTTON as u32) | WS_TABSTOP,
                         0,
-                        102,
-                        452,
+                        12,
+                        508,
                         82,
                         28,
-                        ID_BTN_EXIT,
+                        ID_BTN_INFO,
                         f,
+                    ),
+                    "Thông tin",
+                    "About",
+                );
+                if state.bridge.is_some() {
+                    i18n(
+                        create_ctrl(
+                            hwnd,
+                            "BUTTON",
+                            "Kết thúc",
+                            (BS_PUSHBUTTON as u32) | WS_TABSTOP,
+                            0,
+                            102,
+                            508,
+                            82,
+                            28,
+                            ID_BTN_EXIT,
+                            f,
+                        ),
+                        "Kết thúc",
+                        "Quit",
                     );
                 }
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Mặc định",
+                        (BS_PUSHBUTTON as u32) | WS_TABSTOP,
+                        0,
+                        298,
+                        508,
+                        82,
+                        28,
+                        ID_BTN_DEFAULTS,
+                        f,
+                    ),
                     "Mặc định",
-                    (BS_PUSHBUTTON as u32) | WS_TABSTOP,
-                    0,
-                    298,
-                    452,
-                    82,
-                    28,
-                    ID_BTN_DEFAULTS,
-                    f,
+                    "Defaults",
                 );
-                let btn_revert = create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                let btn_revert = i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Hoàn tác",
+                        (BS_PUSHBUTTON as u32) | WS_TABSTOP,
+                        0,
+                        388,
+                        508,
+                        82,
+                        28,
+                        ID_BTN_REVERT,
+                        f,
+                    ),
                     "Hoàn tác",
-                    (BS_PUSHBUTTON as u32) | WS_TABSTOP,
-                    0,
-                    388,
-                    452,
-                    82,
-                    28,
-                    ID_BTN_REVERT,
-                    f,
+                    "Revert",
                 );
-                create_ctrl(
-                    hwnd,
-                    "BUTTON",
+                i18n(
+                    create_ctrl(
+                        hwnd,
+                        "BUTTON",
+                        "Lưu && Đóng",
+                        (BS_DEFPUSHBUTTON as u32) | WS_TABSTOP,
+                        0,
+                        478,
+                        508,
+                        94,
+                        28,
+                        ID_BTN_SAVE_CLOSE,
+                        f,
+                    ),
                     "Lưu && Đóng",
-                    (BS_DEFPUSHBUTTON as u32) | WS_TABSTOP,
-                    0,
-                    478,
-                    452,
-                    94,
-                    28,
-                    ID_BTN_SAVE_CLOSE,
-                    f,
+                    "Save && Close",
                 );
 
                 state.controls = Some(Controls {
@@ -907,7 +1289,12 @@ pub mod win_gui {
                     tone_new,
                     tone_old,
                     chk_default_vi,
+                    chk_free_typing,
+                    chk_clipboard_unicode,
                     chk_spell,
+                    chk_auto_restore,
+                    chk_feedback_notify,
+                    chk_beep_switch,
                     chk_w_as_u,
                     chk_brackets,
                     chk_quick_telex,
@@ -920,12 +1307,16 @@ pub mod win_gui {
                     chk_macro_digits,
                     chk_macro_off,
                     lbl_macro_count,
+                    chk_show_on_start,
                     chk_autostart,
+                    chk_per_app_mode,
+                    chk_viet_ui,
                     btn_toggle_mode,
                     lbl_ipc_status,
-                    edit_excluded,
                     btn_revert,
                 });
+                state.ctrl_layouts =
+                    PENDING_LAYOUTS.with(|layouts| std::mem::take(&mut *layouts.borrow_mut()));
             }
         }
 
@@ -954,7 +1345,14 @@ pub mod win_gui {
                             sync_ui_from_vm(state);
                         }
                         if bridge.show_requested.swap(false, Ordering::AcqRel) {
-                            unsafe { ShowWindow(hwnd, SW_SHOWNORMAL) };
+                            let dpi = unsafe { GetDpiForWindow(hwnd).max(96) };
+                            if dpi != current_window_dpi() {
+                                unsafe { apply_dpi_layout(hwnd, state, dpi, None) };
+                            }
+                            unsafe {
+                                ShowWindow(hwnd, SW_SHOWNORMAL);
+                                SetForegroundWindow(hwnd);
+                            }
                         }
                         update_bridge_labels(state);
                     }
@@ -1020,6 +1418,9 @@ pub mod win_gui {
                             sync_vm_from_ui(state);
                             match state.vm.apply_and_save() {
                                 Ok(()) => {
+                                    if let Some(ref routing) = state.routing {
+                                        routing.notify_config_reloaded();
+                                    }
                                     if let Some(ref cb) = state.on_config_changed {
                                         cb();
                                     }
@@ -1051,10 +1452,21 @@ pub mod win_gui {
                             state.allow_close = true;
                             unsafe { DestroyWindow(hwnd) };
                         }
+                        ID_CHK_VIET_UI => {
+                            sync_vm_from_ui(state);
+                            apply_interface_language(state);
+                        }
                         _ => {
                             sync_vm_from_ui(state);
                         }
                     }
+                    0
+                }
+                WM_DPICHANGED => {
+                    let new_dpi = ((wparam & 0xFFFF) as u32).max(96);
+                    let suggested =
+                        if lparam != 0 { Some(unsafe { &*(lparam as *const RECT) }) } else { None };
+                    unsafe { apply_dpi_layout(hwnd, state, new_dpi, suggested) };
                     0
                 }
                 WM_CLOSE => {
@@ -1092,6 +1504,22 @@ pub mod win_gui {
                 InitCommonControlsEx(&icc);
 
                 let hinst = GetModuleHandleW(null());
+                let icon_big = LoadImageW(
+                    hinst,
+                    1usize as *const u16,
+                    IMAGE_ICON,
+                    GetSystemMetrics(SM_CXICON),
+                    GetSystemMetrics(SM_CYICON),
+                    LR_DEFAULTCOLOR,
+                ) as HICON;
+                let icon_sm = LoadImageW(
+                    hinst,
+                    1usize as *const u16,
+                    IMAGE_ICON,
+                    GetSystemMetrics(SM_CXSMICON),
+                    GetSystemMetrics(SM_CYSMICON),
+                    LR_DEFAULTCOLOR,
+                ) as HICON;
                 let class_name = to_wide("VNTypeSettingsWin32");
                 let wc = WNDCLASSEXW {
                     cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -1100,17 +1528,18 @@ pub mod win_gui {
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hInstance: hinst,
-                    hIcon: null_mut(),
+                    hIcon: icon_big,
                     hCursor: LoadCursorW(null_mut(), IDC_ARROW),
                     hbrBackground: (COLOR_BTNFACE + 1) as _,
                     lpszMenuName: null(),
                     lpszClassName: class_name.as_ptr(),
-                    hIconSm: null_mut(),
+                    hIconSm: icon_sm,
                 };
                 RegisterClassExW(&wc);
 
                 let title = to_wide(concat!("VNType ", env!("CARGO_PKG_VERSION")));
                 let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+
                 let hwnd = CreateWindowExW(
                     0,
                     class_name.as_ptr(),
@@ -1129,9 +1558,23 @@ pub mod win_gui {
                     return;
                 }
 
-                let font = GetStockObject(DEFAULT_GUI_FONT) as HFONT;
+                let dpi = GetDpiForWindow(hwnd).max(96);
+                set_window_dpi(dpi);
+                let mut rect = RECT { left: 0, top: 0, right: scale_px(584), bottom: scale_px(548) };
+                AdjustWindowRectExForDpi(&mut rect, style, 0, 0, dpi);
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    0,
+                    0,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+
+                let font = create_ui_font();
                 let routing = SharedRoutingMapping::open_or_create().ok();
-                let start_hidden = bridge.is_some();
+                let start_hidden = bridge.is_some() && !vm.draft.show_dialog_on_startup;
 
                 let mut state = Box::new(WindowState {
                     vm,
@@ -1144,6 +1587,8 @@ pub mod win_gui {
                     allow_close: bridge.is_none(),
                     font,
                     controls: None,
+                    ctrl_layouts: Vec::new(),
+                    i18n_ctrls: Vec::new(),
                 });
 
                 build_controls(hwnd, &mut state);

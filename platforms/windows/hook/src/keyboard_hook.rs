@@ -108,13 +108,18 @@ pub mod win_hook {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicIsize, Ordering};
     use windows_sys::Win32::Foundation::{CloseHandle, HINSTANCE, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, GetKeyboardState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, SendInput, ToUnicode, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN,
+        KEYEVENTF_UNICODE, SendInput, ToUnicode, VK_BACK, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_V,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
@@ -137,6 +142,22 @@ pub mod win_hook {
     const VNTYPE_INJECTED_TAG: usize = 0x564E_5450;
     const VK_OEM_COMMA: u32 = 0xBC;
     const VK_Z: u32 = 0x5A;
+
+    fn is_ctrl_vk(vk: u32) -> bool {
+        matches!(vk, 0x11 | 0xA2 | 0xA3)
+    }
+
+    fn is_shift_vk(vk: u32) -> bool {
+        matches!(vk, 0x10 | 0xA0 | 0xA1)
+    }
+
+    thread_local! {
+        static CTRL_DOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static SHIFT_DOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static ALT_DOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static CTRL_SHIFT_CHORD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static OTHER_KEY_PRESSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
 
     struct HookRuntime {
         processor: WindowsHookProcessor,
@@ -177,8 +198,99 @@ pub mod win_hook {
         }
     }
 
-    /// Gửi các batch backspace / Unicode tới ứng dụng đích qua `SendInput`.
-    pub fn send_input_batches(batches: &[WinInputBatch]) {
+    fn paste_text_via_clipboard(text: &str) -> bool {
+        const CF_UNICODETEXT: u32 = 13;
+        let wide: Vec<u16> = text.encode_utf16().chain(core::iter::once(0)).collect();
+        let byte_len = wide.len() * core::mem::size_of::<u16>();
+        unsafe {
+            if OpenClipboard(core::ptr::null_mut()) == 0 {
+                return false;
+            }
+            EmptyClipboard();
+            let hmem = GlobalAlloc(GMEM_MOVEABLE, byte_len);
+            if hmem.is_null() {
+                CloseClipboard();
+                return false;
+            }
+            let ptr = GlobalLock(hmem) as *mut u16;
+            if ptr.is_null() {
+                CloseClipboard();
+                return false;
+            }
+            core::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+            GlobalUnlock(hmem);
+            let set_ok = !SetClipboardData(CF_UNICODETEXT, hmem).is_null();
+            CloseClipboard();
+            if !set_ok {
+                return false;
+            }
+
+            let inputs = [
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_CONTROL,
+                            wScan: 0,
+                            dwFlags: 0,
+                            time: 0,
+                            dwExtraInfo: VNTYPE_INJECTED_TAG,
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_V,
+                            wScan: 0,
+                            dwFlags: 0,
+                            time: 0,
+                            dwExtraInfo: VNTYPE_INJECTED_TAG,
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_V,
+                            wScan: 0,
+                            dwFlags: KEYEVENTF_KEYUP,
+                            time: 0,
+                            dwExtraInfo: VNTYPE_INJECTED_TAG,
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_CONTROL,
+                            wScan: 0,
+                            dwFlags: KEYEVENTF_KEYUP,
+                            time: 0,
+                            dwExtraInfo: VNTYPE_INJECTED_TAG,
+                        },
+                    },
+                },
+            ];
+            SendInput(inputs.len() as u32, inputs.as_ptr(), core::mem::size_of::<INPUT>() as i32);
+            true
+        }
+    }
+
+    fn flush_inputs(inputs: &mut Vec<INPUT>) {
+        if !inputs.is_empty() {
+            unsafe {
+                SendInput(inputs.len() as u32, inputs.as_ptr(), core::mem::size_of::<INPUT>() as i32);
+            }
+            inputs.clear();
+        }
+    }
+
+    /// Gửi các batch backspace / Unicode tới ứng dụng đích qua `SendInput` (hoặc Clipboard nếu bật).
+    pub fn send_input_batches(batches: &[WinInputBatch], use_clipboard: bool) {
         let mut inputs: Vec<INPUT> = Vec::new();
         for batch in batches {
             match batch {
@@ -211,6 +323,12 @@ pub mod win_hook {
                     }
                 }
                 WinInputBatch::SendUnicodeText(text) => {
+                    if use_clipboard {
+                        flush_inputs(&mut inputs);
+                        if paste_text_via_clipboard(text) {
+                            continue;
+                        }
+                    }
                     for unit in text.encode_utf16() {
                         inputs.push(INPUT {
                             r#type: INPUT_KEYBOARD,
@@ -240,11 +358,7 @@ pub mod win_hook {
                 }
             }
         }
-        if !inputs.is_empty() {
-            unsafe {
-                SendInput(inputs.len() as u32, inputs.as_ptr(), core::mem::size_of::<INPUT>() as i32);
-            }
-        }
+        flush_inputs(&mut inputs);
     }
 
     /// Lấy `(pid, exe_stem)` của cửa sổ đang có tiêu điểm.
@@ -322,6 +436,30 @@ pub mod win_hook {
         KeyEvent { key, ctrl, alt, meta }
     }
 
+    fn notify_switch_feedback(rt: &HookRuntime, enabled: bool) {
+        if rt.config.beep_on_switch {
+            unsafe {
+                MessageBeep(0x0000_0040);
+            }
+        }
+        if rt.config.show_feedback_notification {
+            if let Some(tray) = &rt.tray {
+                let msg = if rt.config.vietnamese_interface {
+                    if enabled {
+                        "Đã bật chế độ gõ Tiếng Việt"
+                    } else {
+                        "Đã tắt chế độ gõ Tiếng Việt (Tiếng Anh)"
+                    }
+                } else if enabled {
+                    "Vietnamese typing: ON"
+                } else {
+                    "Vietnamese typing: OFF (English)"
+                };
+                tray.show_balloon("VNType", msg);
+            }
+        }
+    }
+
     fn sync_ui_and_actions(rt: &mut HookRuntime) {
         let cfg_gen = rt.routing.config_generation.load(Ordering::Acquire);
         if cfg_gen != rt.last_config_gen {
@@ -346,6 +484,7 @@ pub mod win_hook {
                     let _ = save_config_atomic(default_config_path(), &rt.config);
                     rt.bridge.set_vietnamese_enabled(next);
                     rt.bridge.request_refresh();
+                    notify_switch_feedback(rt, next);
                 }
                 TrayMenuAction::SelectTelex => {
                     rt.config.input_method = "telex".into();
@@ -419,11 +558,71 @@ pub mod win_hook {
             }
         }
 
-        if msg != WM_KEYDOWN && msg != WM_SYSKEYDOWN {
+        if (kb.flags & LLKHF_INJECTED) != 0 || kb.dwExtraInfo == VNTYPE_INJECTED_TAG {
             return unsafe { CallNextHookEx(next_hook, code, wparam, lparam) };
         }
 
-        if (kb.flags & LLKHF_INJECTED) != 0 || kb.dwExtraInfo == VNTYPE_INJECTED_TAG {
+        let is_down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+        let is_up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
+        if matches!(kb.vkCode, 0x12 | 0xA4 | 0xA5) {
+            ALT_DOWN.with(|c| c.set(is_down));
+        }
+        if is_down {
+            if is_ctrl_vk(kb.vkCode) {
+                CTRL_DOWN.with(|c| c.set(true));
+            }
+            if is_shift_vk(kb.vkCode) {
+                SHIFT_DOWN.with(|c| c.set(true));
+            }
+            if is_ctrl_vk(kb.vkCode) || is_shift_vk(kb.vkCode) {
+                let ctrl_down = CTRL_DOWN.with(|c| c.get());
+                let shift_down = SHIFT_DOWN.with(|c| c.get());
+                let alt_down = ALT_DOWN.with(|c| c.get());
+                let win_down = WIN_KEY_DOWN.with(|c| c.get());
+                if ctrl_down && shift_down && !alt_down && !win_down {
+                    CTRL_SHIFT_CHORD.with(|c| c.set(true));
+                    OTHER_KEY_PRESSED.with(|c| c.set(false));
+                }
+            } else {
+                OTHER_KEY_PRESSED.with(|c| c.set(true));
+                CTRL_SHIFT_CHORD.with(|c| c.set(false));
+            }
+        } else if is_up {
+            if is_ctrl_vk(kb.vkCode) {
+                CTRL_DOWN.with(|c| c.set(false));
+            }
+            if is_shift_vk(kb.vkCode) {
+                SHIFT_DOWN.with(|c| c.set(false));
+            }
+            if is_ctrl_vk(kb.vkCode) || is_shift_vk(kb.vkCode) {
+                let triggered =
+                    CTRL_SHIFT_CHORD.with(|c| c.replace(false)) && !OTHER_KEY_PRESSED.with(|c| c.get());
+                if triggered {
+                    HOOK_RUNTIME.with(|cell| {
+                        let mut borrow = cell.borrow_mut();
+                        let Some(rt) = borrow.as_mut() else {
+                            return;
+                        };
+                        sync_ui_and_actions(rt);
+                        if rt.config.switch_key == SwitchKey::CtrlShift {
+                            let next = !rt.processor.is_enabled();
+                            rt.processor.set_enabled(next);
+                            rt.config.default_vietnamese = next;
+                            let _ = save_config_atomic(default_config_path(), &rt.config);
+                            rt.bridge.set_vietnamese_enabled(next);
+                            rt.bridge.request_refresh();
+                            notify_switch_feedback(rt, next);
+                            if let Some(tray) = &rt.tray {
+                                tray.update(build_tray_status(&rt.config, next));
+                            }
+                        }
+                    });
+                }
+                return unsafe { CallNextHookEx(next_hook, code, wparam, lparam) };
+            }
+        }
+
+        if !is_down {
             return unsafe { CallNextHookEx(next_hook, code, wparam, lparam) };
         }
 
@@ -438,6 +637,7 @@ pub mod win_hook {
             // Nếu `RegisterHotKey` chưa đăng ký được, dùng hook dự phòng để bắt phím chuyển.
             let is_switch_hotkey = !WinTrayIcon::is_hotkey_registered()
                 && match rt.config.switch_key {
+                    SwitchKey::CtrlShift => false,
                     SwitchKey::AltComma => {
                         kb.vkCode == VK_OEM_COMMA && event.alt && !event.ctrl && !event.meta
                     }
@@ -450,6 +650,7 @@ pub mod win_hook {
                 let _ = save_config_atomic(default_config_path(), &rt.config);
                 rt.bridge.set_vietnamese_enabled(next);
                 rt.bridge.request_refresh();
+                notify_switch_feedback(rt, next);
                 if let Some(tray) = &rt.tray {
                     tray.update(build_tray_status(&rt.config, next));
                 }
@@ -465,7 +666,7 @@ pub mod win_hook {
 
             let (consumed, batches) = rt.processor.process_hook_key(&rt.routing, pid, event, kb.vkCode);
             if !batches.is_empty() {
-                send_input_batches(&batches);
+                send_input_batches(&batches, rt.config.always_use_clipboard_unicode);
             }
             consumed
         });
