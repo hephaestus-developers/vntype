@@ -31,7 +31,7 @@ trap 'rm -rf "$TOPDIR"' EXIT
 mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} "$OUT_DIR"
 
 FCITX_BUILD="$TOPDIR/fcitx5-build"
-RPM_LIBDIR="$(rpm --eval '%{_libdir}' | sed 's|^/||')"
+RPM_LIBDIR="$(rpm --eval '%{_libdir}' | sed 's|^/usr/||; s|^/||')"
 cmake -B "$FCITX_BUILD" -S "$ROOT_DIR/platforms/linux/fcitx5" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
