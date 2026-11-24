@@ -50,6 +50,7 @@ echo "Building VNType $VERSION ($ARCH) $PROFILE binaries..."
 cargo build "${CARGO_FLAGS[@]}" \
     -p vntype-cli \
     -p vntype-ibus \
+    -p vntype-linux-settings \
     -p vntype-ffi \
     --manifest-path "$ROOT_DIR/Cargo.toml"
 
@@ -99,11 +100,12 @@ build_deb "vntype-cli" "" "VNType Vietnamese input method CLI"
 # 2. vntype-ibus
 IBUS_ROOT="$STAGE_DIR/vntype-ibus"
 install -Dm755 "$ROOT_DIR/target/$PROFILE/vntype-ibus" "$IBUS_ROOT/usr/libexec/vntype-ibus"
+install -Dm755 "$ROOT_DIR/target/$PROFILE/vntype-linux-settings" "$IBUS_ROOT/usr/bin/vntype-linux-settings"
 mkdir -p "$IBUS_ROOT/usr/share/ibus/component"
 sed 's|@LIBEXECDIR@|/usr/libexec|g' \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \
     > "$IBUS_ROOT/usr/share/ibus/component/vntype.xml"
-build_deb "vntype-ibus" "ibus" "VNType IBus input method engine"
+build_deb "vntype-ibus" "ibus, libgtk-3-0 | libgtk-3-0t64" "VNType IBus input method engine"
 
 # 2. vntype-fcitx5
 FCITX_ROOT="$STAGE_DIR/vntype-fcitx5"

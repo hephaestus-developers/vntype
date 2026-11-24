@@ -208,6 +208,20 @@ impl IbusEngineService {
 
     /// Xử lý sự kiện người dùng chọn một mục trong menu IBus (`PropertyActivate(name, state)`).
     pub fn property_activate(&mut self, name: &str, state: u32) {
+        if name == "vntype.app.settings" {
+            let exe = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|dir| dir.join("vntype-linux-settings")))
+                .filter(|p| p.is_file())
+                .unwrap_or_else(|| PathBuf::from("vntype-linux-settings"));
+            let _ = std::process::Command::new(exe)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            return;
+        }
+
         if name == "vntype.macro.edit" {
             if let Err(err) = ensure_macros_file(&self.macros_path) {
                 debug_log(&format!("MACRO_EDIT ensure_macros_file err={err}"));

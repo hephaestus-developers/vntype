@@ -1,0 +1,21 @@
+[package]
+name = "vntype-linux-settings"
+description = "Giao diện cài đặt native (GTK3) cho bộ gõ tiếng Việt VNType trên Linux."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vntype-linux-settings"
+path = "src/main.rs"
+
+[dependencies]
+vntype-config = { workspace = true }
+vntype-core = { workspace = true }
+vntype-settings-core = { workspace = true }
+serde_json = { workspace = true }
+gtk = { workspace = true }

@@ -12,10 +12,10 @@ LIBEXECDIR="${LIBEXECDIR:-$PREFIX/libexec}"
 COMPONENT_DIR="$PREFIX/share/ibus/component"
 
 if [ "${1:-}" = "--uninstall" ]; then
-    echo "==> Gỡ cài đặt vntype-ibus khỏi $PREFIX"
-    sudo rm -f "$LIBEXECDIR/vntype-ibus" "$COMPONENT_DIR/vntype.xml"
+    echo "==> Gỡ cài đặt vntype-ibus và vntype-linux-settings khỏi $PREFIX"
+    sudo rm -f "$LIBEXECDIR/vntype-ibus" "$PREFIX/bin/vntype-linux-settings" "$COMPONENT_DIR/vntype.xml"
     ibus write-cache >/dev/null 2>&1 || true
-    echo "==> Đã gỡ cài đặt vntype-ibus."
+    echo "==> Đã gỡ cài đặt vntype-ibus và vntype-linux-settings."
     exit 0
 fi
 
@@ -24,11 +24,12 @@ if [ "${VNTYPE_OFFLINE:-0}" = "1" ] || ! timeout 1 bash -c "</dev/tcp/index.crat
     CARGO_FLAGS+=("--offline")
 fi
 
-echo "==> Biên dịch vntype-ibus"
-(cd "$ROOT" && cargo build --release -p vntype-ibus "${CARGO_FLAGS[@]}")
+echo "==> Biên dịch vntype-ibus và vntype-linux-settings"
+(cd "$ROOT" && cargo build --release -p vntype-ibus -p vntype-linux-settings "${CARGO_FLAGS[@]}")
 
 echo "==> Cài đặt tệp thực thi và mô tả thành phần IBus vào $PREFIX"
 sudo install -Dm755 "$ROOT/target/release/vntype-ibus" "$LIBEXECDIR/vntype-ibus"
+sudo install -Dm755 "$ROOT/target/release/vntype-linux-settings" "$PREFIX/bin/vntype-linux-settings"
 TMP_XML="$(mktemp)"
 sed "s|@LIBEXECDIR@|$LIBEXECDIR|g" "$HERE/data/vntype.xml.in" > "$TMP_XML"
 sudo install -Dm644 "$TMP_XML" "$COMPONENT_DIR/vntype.xml"

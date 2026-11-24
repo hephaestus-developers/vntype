@@ -15,6 +15,10 @@ pub struct PlatformCapabilities {
     pub supports_accessibility_check: bool,
     /// Cho phép mở và theo dõi tệp `macros.txt` bằng trình soạn thảo mặc định của hệ thống.
     pub supports_macro_file_editor: bool,
+    /// Cho phép cấu hình phím nóng chuyển Anh/Việt riêng trong bộ gõ (Windows).
+    pub supports_switch_key: bool,
+    /// Cho phép cấu hình danh sách ứng dụng loại trừ theo tên tiến trình (Windows/macOS).
+    pub supports_excluded_apps: bool,
 }
 
 impl PlatformCapabilities {
@@ -26,6 +30,8 @@ impl PlatformCapabilities {
             supports_input_framework_status: false,
             supports_accessibility_check: false,
             supports_macro_file_editor: true,
+            supports_switch_key: true,
+            supports_excluded_apps: true,
         }
     }
 
@@ -37,6 +43,8 @@ impl PlatformCapabilities {
             supports_input_framework_status: true,
             supports_accessibility_check: false,
             supports_macro_file_editor: true,
+            supports_switch_key: false,
+            supports_excluded_apps: false,
         }
     }
 
@@ -48,6 +56,8 @@ impl PlatformCapabilities {
             supports_input_framework_status: false,
             supports_accessibility_check: true,
             supports_macro_file_editor: true,
+            supports_switch_key: false,
+            supports_excluded_apps: true,
         }
     }
 
@@ -75,7 +85,11 @@ mod tests {
 
         assert!(win.supports_autostart);
         assert!(win.supports_daemon_ipc);
+        assert!(win.supports_switch_key);
+        assert!(win.supports_excluded_apps);
         assert!(!linux.supports_autostart);
+        assert!(!linux.supports_switch_key);
+        assert!(!linux.supports_excluded_apps);
         assert!(linux.supports_input_framework_status);
         assert!(!mac.supports_autostart);
         assert!(mac.supports_accessibility_check);

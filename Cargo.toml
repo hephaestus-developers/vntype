@@ -4,6 +4,7 @@ members = [
     "crates/*",
     "apps/*",
     "platforms/linux/ibus",
+    "platforms/linux/settings",
     "platforms/windows/*",
 ]
 
@@ -39,7 +40,8 @@ windows-core = "0.62.2"
 windows-implement = "0.60.2"
 windows-sys = "0.61.2"
 eframe = { version = "0.31.1", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
-criterion = { version = "0.5.1", default-features = false, features = ["cargo_bench_support"] }
+gtk = "0.19.0"
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 
 [profile.release]
 lto = true

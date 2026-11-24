@@ -536,6 +536,8 @@ fn build_ibus_prop_list_variant(cfg: &Config) -> OwnedVariant {
                 prop_normal("vntype.macro.edit", "Chỉnh sửa bảng gõ tắt (macros.txt)..."),
             ],
         ),
+        prop_separator("vntype.app.sep"),
+        prop_normal("vntype.app.settings", "Mở cài đặt VNType..."),
     ];
 
     prop_list_variant(top_items)
