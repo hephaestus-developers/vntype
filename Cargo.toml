@@ -22,6 +22,7 @@ repository = "https://github.com/hephaestus-developers/vntype"
 vntype-syllable = { path = "crates/vntype-syllable", default-features = false }
 vntype-core = { path = "crates/vntype-core" }
 vntype-config = { path = "crates/vntype-config" }
+vntype-settings-core = { path = "crates/vntype-settings-core" }
 vntype-engine = { path = "crates/vntype-engine" }
 vntype-adapter = { path = "crates/vntype-adapter" }
 vntype-ffi = { path = "crates/vntype-ffi" }

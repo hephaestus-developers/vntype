@@ -2883,8 +2883,10 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "vntype-adapter",
+ "vntype-config",
  "vntype-core",
  "vntype-engine",
+ "vntype-settings-core",
 ]
 
 [[package]]
@@ -2919,8 +2921,19 @@ dependencies = [
  "serde_json",
  "vntype-config",
  "vntype-core",
+ "vntype-settings-core",
  "vntype-win-ipc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "vntype-settings-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "vntype-config",
+ "vntype-core",
 ]
 
 [[package]]

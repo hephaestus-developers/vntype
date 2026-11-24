@@ -495,6 +495,86 @@ pub unsafe extern "C" fn vnt_charset_decode_bytes(
     }
 }
 
+/// Giải phóng chuỗi C do các hàm `vnt_settings_*` cấp phát trên heap.
+///
+/// # Safety
+/// `s` phải là con trỏ trả về từ `vnt_settings_load_json` (hoặc null) và chưa bị giải phóng trước đó.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vnt_free_string(s: *mut c_char) {
+    if !s.is_null() {
+        unsafe { drop(CString::from_raw(s)) };
+    }
+}
+
+/// Trả về chuỗi JSON mô tả các khả năng giao diện của hệ điều hành hiện tại (`PlatformCapabilities`).
+#[unsafe(no_mangle)]
+pub extern "C" fn vnt_settings_capabilities_json() -> *const c_char {
+    static CAPS: OnceLock<CString> = OnceLock::new();
+    let caps = CAPS.get_or_init(|| {
+        let json = serde_json::to_string(&vntype_settings_core::PlatformCapabilities::for_current_os())
+            .unwrap_or_else(|_| "{}".to_string());
+        CString::new(json).unwrap_or_default()
+    });
+    caps.as_ptr()
+}
+
+fn resolve_ffi_config_path(config_path: *const c_char) -> std::path::PathBuf {
+    unsafe { opt_cstr(config_path) }
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(vntype_config::default_config_path)
+}
+
+/// Đọc cấu hình từ `config_path` (hoặc đường dẫn mặc định nếu null) và trả về chuỗi JSON.
+///
+/// Caller phải gọi [`vnt_free_string`] để giải phóng chuỗi trả về.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vnt_settings_load_json(config_path: *const c_char) -> *mut c_char {
+    guard(ptr::null_mut(), || {
+        let path = resolve_ffi_config_path(config_path);
+        let vm = vntype_settings_core::SettingsViewModel::load(path);
+        let Ok(json) = serde_json::to_string(&vm.draft) else {
+            return ptr::null_mut();
+        };
+        CString::new(json).map(CString::into_raw).unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Kiểm tra tính hợp lệ của bản vá JSON và lưu nguyên tử xuống `config_path` (hoặc đường dẫn mặc định nếu null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vnt_settings_validate_and_save_json(
+    config_path: *const c_char,
+    json: *const c_char,
+) -> bool {
+    guard(false, || {
+        let Some(json) = (unsafe { opt_cstr(json) }) else {
+            return false;
+        };
+        let path = resolve_ffi_config_path(config_path);
+        vntype_settings_core::validate_and_save_json(&path, &json).is_ok()
+    })
+}
+
+/// Đảm bảo tệp `macros.txt` tương ứng với `config_path` tồn tại trên đĩa.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vnt_macros_ensure_file(config_path: *const c_char) -> bool {
+    guard(false, || {
+        let path = resolve_ffi_config_path(config_path);
+        let vm = vntype_settings_core::SettingsViewModel::load(path);
+        vm.ensure_macros_file().is_ok()
+    })
+}
+
+/// Trả về số lượng quy tắc gõ tắt đang có trong `macros.txt` (`-1` nếu lỗi).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vnt_macros_entry_count(config_path: *const c_char) -> i32 {
+    guard(-1, || {
+        let path = resolve_ffi_config_path(config_path);
+        let vm = vntype_settings_core::SettingsViewModel::load(path);
+        i32::try_from(vm.macro_entry_count()).unwrap_or(i32::MAX)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,5 +660,40 @@ mod tests {
 
             vnt_controller_free(ctrl);
         }
+    }
+
+    #[test]
+    fn ffi_settings_and_macros_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("vntype_ffi_settings_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_c = CString::new(dir.join("config.json").to_string_lossy().as_ref()).unwrap();
+
+        unsafe {
+            let caps = CStr::from_ptr(vnt_settings_capabilities_json()).to_str().unwrap();
+            assert!(caps.contains("supports_autostart"));
+
+            assert!(vnt_settings_validate_and_save_json(
+                cfg_c.as_ptr(),
+                c"{\"input_method\":\"vni\"}".as_ptr()
+            ));
+            assert!(!vnt_settings_validate_and_save_json(
+                cfg_c.as_ptr(),
+                c"{\"input_method\":\"bad\"}".as_ptr()
+            ));
+
+            let loaded_ptr = vnt_settings_load_json(cfg_c.as_ptr());
+            assert!(!loaded_ptr.is_null());
+            let loaded = CStr::from_ptr(loaded_ptr).to_str().unwrap();
+            assert!(loaded.contains("\"vni\""));
+            vnt_free_string(loaded_ptr);
+
+            assert!(vnt_macros_ensure_file(cfg_c.as_ptr()));
+            assert_eq!(vnt_macros_entry_count(cfg_c.as_ptr()), 0);
+            std::fs::write(dir.join("macros.txt"), "ko=không\n").unwrap();
+            assert_eq!(vnt_macros_entry_count(cfg_c.as_ptr()), 1);
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

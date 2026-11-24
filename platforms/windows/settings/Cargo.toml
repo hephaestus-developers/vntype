@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 vntype-config = { workspace = true }
 vntype-core = { workspace = true }
+vntype-settings-core = { workspace = true }
 vntype-win-ipc = { workspace = true }
 serde_json = { workspace = true }
 eframe = { workspace = true }

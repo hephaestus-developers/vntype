@@ -1,0 +1,16 @@
+[package]
+name = "vntype-settings-core"
+description = "Lõi quản lý trạng thái cài đặt, kiểm tra hợp lệ và khả năng nền tảng dùng chung cho giao diện VNType."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+repository.workspace = true
+
+[dependencies]
+vntype-config = { workspace = true }
+vntype-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
