@@ -5,6 +5,18 @@ umask 022
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist/linux}"
 OFFLINE="${VNTYPE_OFFLINE:-0}"
+PROFILE="${PROFILE:-release}"
+
+for arg in "$@"; do
+    case "$arg" in
+        --debug) PROFILE="debug" ;;
+        --release) PROFILE="release" ;;
+        *)
+            echo "Usage: $(basename "$0") [--debug|--release]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 for cmd in cargo cmake dpkg-deb; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -25,10 +37,16 @@ else
     esac
 fi
 
-CARGO_FLAGS=(--release)
+CARGO_FLAGS=()
+CMAKE_BUILD_TYPE="Release"
+if [[ "$PROFILE" == "release" ]]; then
+    CARGO_FLAGS+=(--release)
+else
+    CMAKE_BUILD_TYPE="Debug"
+fi
 [[ "$OFFLINE" == "1" ]] && CARGO_FLAGS+=(--offline)
 
-echo "Building VNType $VERSION ($ARCH) release binaries..."
+echo "Building VNType $VERSION ($ARCH) $PROFILE binaries..."
 cargo build "${CARGO_FLAGS[@]}" \
     -p vntype-cli \
     -p vntype-ibus \
@@ -40,7 +58,7 @@ trap 'rm -rf "$STAGE_DIR"' EXIT
 
 FCITX_BUILD="$STAGE_DIR/fcitx5-build"
 cmake -B "$FCITX_BUILD" -S "$ROOT_DIR/platforms/linux/fcitx5" \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH"
 cmake --build "$FCITX_BUILD" -j"$(nproc)"
@@ -75,12 +93,12 @@ build_deb() {
 
 # 1. vntype-cli (optional)
 CLI_ROOT="$STAGE_DIR/vntype-cli"
-install -Dm755 "$ROOT_DIR/target/release/vntype-cli" "$CLI_ROOT/usr/bin/vntype-cli"
+install -Dm755 "$ROOT_DIR/target/$PROFILE/vntype-cli" "$CLI_ROOT/usr/bin/vntype-cli"
 build_deb "vntype-cli" "" "VNType Vietnamese input method CLI"
 
 # 2. vntype-ibus
 IBUS_ROOT="$STAGE_DIR/vntype-ibus"
-install -Dm755 "$ROOT_DIR/target/release/vntype-ibus" "$IBUS_ROOT/usr/libexec/vntype-ibus"
+install -Dm755 "$ROOT_DIR/target/$PROFILE/vntype-ibus" "$IBUS_ROOT/usr/libexec/vntype-ibus"
 mkdir -p "$IBUS_ROOT/usr/share/ibus/component"
 sed 's|@LIBEXECDIR@|/usr/libexec|g' \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \

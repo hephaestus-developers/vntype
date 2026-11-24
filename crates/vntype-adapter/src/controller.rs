@@ -318,7 +318,11 @@ impl AdapterController {
         };
         let was_adopted = self.session.is_adopted();
         let act = self.session.process_key(event);
-        self.translate_action(act, &before, was_adopted, Some(raw_keycode))
+        let effects = self.translate_action(act, &before, was_adopted, Some(raw_keycode));
+        if matches!(event.key, vntype_engine::Key::Enter | vntype_engine::Key::Tab) || event.key.is_nav() {
+            self.set_surrounding_utf16(None, 0, 0);
+        }
+        effects
     }
 
     /// Khi bộ hẹn giờ của hệ điều hành điểm (`Effect::WaitMs` hoàn tất), hàm này hoàn tất giao dịch
@@ -518,10 +522,11 @@ impl AdapterController {
                     self.update_surrounding_after_commit(&plan.text);
                 }
                 effects.push(Effect::ClearPreedit);
-                if plan.pass_key
-                    && let Some(code) = raw_keycode
-                {
-                    effects.push(Effect::ForwardKey { raw_keycode: code });
+                if plan.pass_key {
+                    self.set_surrounding_utf16(None, 0, 0);
+                    if let Some(code) = raw_keycode {
+                        effects.push(Effect::ForwardKey { raw_keycode: code });
+                    }
                 }
             }
             PlanKind::Replace => {
@@ -531,10 +536,11 @@ impl AdapterController {
                         self.update_surrounding_after_commit(&plan.text);
                     }
                     effects.push(Effect::ClearPreedit);
-                    if plan.pass_key
-                        && let Some(code) = raw_keycode
-                    {
-                        effects.push(Effect::ForwardKey { raw_keycode: code });
+                    if plan.pass_key {
+                        self.set_surrounding_utf16(None, 0, 0);
+                        if let Some(code) = raw_keycode {
+                            effects.push(Effect::ForwardKey { raw_keycode: code });
+                        }
                     }
                 } else if self.async_replace && plan.wait_ms > 0 {
                     // Giao dịch bất đồng bộ 2 pha: Xoá trước -> Chờ wait_ms -> Commit sau
@@ -561,10 +567,11 @@ impl AdapterController {
                     });
                     self.update_surrounding_after_delete(plan.delete_chars);
                     self.update_surrounding_after_commit(&plan.text);
-                    if plan.pass_key
-                        && let Some(code) = raw_keycode
-                    {
-                        effects.push(Effect::ForwardKey { raw_keycode: code });
+                    if plan.pass_key {
+                        self.set_surrounding_utf16(None, 0, 0);
+                        if let Some(code) = raw_keycode {
+                            effects.push(Effect::ForwardKey { raw_keycode: code });
+                        }
                     }
                 }
             }

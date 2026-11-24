@@ -534,6 +534,7 @@ impl ImeSession {
             self.cap_next = false;
             self.pending_end = false;
             self.last = None;
+            self.adopt_allowed = false;
             return self.boundary_passthrough();
         }
         match ev.key {
@@ -543,11 +544,15 @@ impl ImeSession {
                 let act = self.word_end(None);
                 self.cap_next = self.config.auto_capitalize;
                 self.pending_end = false;
+                self.adopt_allowed = false;
                 act
             }
             Key::Char(c) if self.is_word_char(c) => self.letter(c),
             Key::Char(c) => self.separator(c),
-            _ => self.boundary_passthrough(),
+            _ => {
+                self.adopt_allowed = false;
+                self.boundary_passthrough()
+            }
         }
     }
 
@@ -652,6 +657,7 @@ impl ImeSession {
             self.cap_next = false;
             self.pending_end = false;
             self.adopt_previous_word();
+            self.adopt_allowed = true;
             self.literal = self.raw.is_empty() && self.starts_url_segment();
         }
         self.raw.push(ch);
@@ -709,6 +715,7 @@ impl ImeSession {
 
     fn backspace(&mut self) -> Action {
         if self.raw.is_empty() {
+            self.adopt_allowed = true;
             self.history.clear();
             self.off_raw.clear();
             if self.config.macro_undo

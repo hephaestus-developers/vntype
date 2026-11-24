@@ -9,6 +9,23 @@ use vntype_engine::{FieldKind, Key, OutputMode};
 
 use crate::keymap::{IBUS_RELEASE_MASK, translate_ibus_key};
 
+#[cfg(all(debug_assertions, not(test)))]
+fn debug_log(msg: &str) {
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    if let Ok(mut f) =
+        std::fs::OpenOptions::new().create(true).append(true).open("/tmp/vntype-ibus-debug.log")
+    {
+        let _ = writeln!(f, "[{}.{:03}] {msg}", elapsed.as_secs(), elapsed.subsec_millis());
+        let _ = f.flush();
+    }
+}
+
+#[cfg(not(all(debug_assertions, not(test))))]
+#[inline]
+fn debug_log(_msg: &str) {}
+
 /// Tín hiệu đầu ra phát từ dịch vụ IBus Engine xuống IBus Daemon qua D-Bus.
 #[derive(Debug, Clone, PartialEq)]
 pub enum IbusSignal {
@@ -102,7 +119,7 @@ impl IbusEngineService {
             return false;
         }
         self.reload_config_if_needed();
-        let effects = self.controller.process_key(ev, keyval);
+        let effects = self.controller.process_key(ev.clone(), keyval);
         let handled = self.apply_effects(effects, keyval, keycode, state);
         if keyval == 0xff08 {
             if handled {
@@ -111,11 +128,18 @@ impl IbusEngineService {
         } else {
             self.holding_eaten_backspace = false;
         }
+        debug_log(&format!(
+            "KEY keyval={keyval:#x} keycode={keycode} state={state:#x} ev={ev:?} -> handled={handled} display={:?} adopted={} signals={:?}",
+            self.controller.display_text(),
+            self.controller.session().is_adopted(),
+            self.signals,
+        ));
         handled
     }
 
     /// Xử lý tín hiệu `SetSurroundingText(text, cursor_chars, anchor_chars)` từ IBus.
     pub fn set_surrounding_text(&mut self, text: &str, cursor_chars: u32, anchor_chars: u32) {
+        debug_log(&format!("SET_SURROUNDING text={text:?} cursor={cursor_chars} anchor={anchor_chars}"));
         let Some(c_u16) = char_to_utf16_offset(text, cursor_chars) else {
             self.controller.set_surrounding_utf16(None, 0, 0);
             return;
@@ -136,6 +160,7 @@ impl IbusEngineService {
             8 => FieldKind::Password,
             _ => FieldKind::Text,
         };
+        debug_log(&format!("SET_CONTENT_TYPE purpose={purpose} -> {kind:?}"));
         let effects = self.controller.set_field_kind(kind);
         self.apply_effects(effects, 0, 0, 0);
     }
@@ -229,6 +254,7 @@ impl IbusEngineService {
 
     /// Xử lý sự kiện nhận tiêu điểm `FocusIn(app_id)`.
     pub fn focus_in(&mut self, app_id: Option<&str>) {
+        debug_log(&format!("FOCUS_IN app_id={app_id:?}"));
         self.holding_eaten_backspace = false;
         let effects = self.controller.focus_changed(app_id);
         self.apply_effects(effects, 0, 0, 0);
@@ -237,6 +263,7 @@ impl IbusEngineService {
 
     /// Xử lý sự kiện mất tiêu điểm `FocusOut()`.
     pub fn focus_out(&mut self) {
+        debug_log("FOCUS_OUT");
         self.holding_eaten_backspace = false;
         let effects = self.controller.flush();
         self.apply_effects(effects, 0, 0, 0);
@@ -247,6 +274,7 @@ impl IbusEngineService {
     /// Lưu ý: IBus gửi `Reset` ngay sau khi phím Backspace xoá dấu cách. Nếu phiên vừa khôi phục
     /// từ đã chốt (`is_adopted()`), ta chỉ ẩn vùng gạch chân mà không xoá trạng thái từ đó.
     pub fn reset(&mut self) {
+        debug_log(&format!("RESET adopted={}", self.controller.session().is_adopted()));
         if self.controller.session().is_adopted() {
             self.signals.push(IbusSignal::HidePreeditText);
             return;
@@ -257,6 +285,7 @@ impl IbusEngineService {
 
     fn apply_effects(&mut self, effects: Vec<Effect>, keyval: u32, keycode: u32, state: u32) -> bool {
         let mut forward_original = false;
+        let mut emitted_commit = false;
         for eff in effects {
             match eff {
                 Effect::SetPreedit { text, cursor_utf16, .. } => {
@@ -266,9 +295,11 @@ impl IbusEngineService {
                     self.signals.push(IbusSignal::HidePreeditText);
                 }
                 Effect::CommitText { text } => {
+                    emitted_commit = true;
                     self.signals.push(IbusSignal::CommitText { text });
                 }
                 Effect::ReplaceText { delete_chars, insert, .. } => {
+                    emitted_commit = true;
                     if delete_chars > 0 {
                         self.signals.push(IbusSignal::DeleteSurroundingText {
                             offset_chars: -(delete_chars as i32),
@@ -286,7 +317,11 @@ impl IbusEngineService {
                 }
             }
         }
-        if forward_original && keyval == 0xff08 && self.holding_eaten_backspace && keycode != 0 {
+        let should_forward_sync = keycode != 0
+            && keyval != 0
+            && forward_original
+            && (emitted_commit || (keyval == 0xff08 && self.holding_eaten_backspace));
+        if should_forward_sync {
             self.signals.push(IbusSignal::ForwardKeyEvent { keyval, keycode, state });
             self.signals.push(IbusSignal::ForwardKeyEvent {
                 keyval,
@@ -417,5 +452,28 @@ mod tests {
         assert!(svc.drain_signals().iter().any(|s| matches!(s, IbusSignal::UpdateMenu { .. })));
 
         let _ = std::fs::remove_file(tmp);
+    }
+
+    #[test]
+    fn commit_before_forwarded_enter_preserves_fifo_order() {
+        let mut svc = IbusEngineService::new(PathBuf::from("/nonexistent/config.json"));
+        for b in b"lawngj" {
+            assert!(svc.process_key_event(*b as u32, 0, 0));
+        }
+        let _ = svc.drain_signals();
+
+        // Nhấn Enter (0xff0d, keycode 36) khi đang có preedit "lặng":
+        // phải CommitText + HidePreeditText trước rồi mới ForwardKeyEvent và trả về true.
+        assert!(svc.process_key_event(0xff0d, 36, 0));
+        let sigs = svc.drain_signals();
+        assert_eq!(
+            sigs,
+            vec![
+                IbusSignal::CommitText { text: "lặng".into() },
+                IbusSignal::HidePreeditText,
+                IbusSignal::ForwardKeyEvent { keyval: 0xff0d, keycode: 36, state: 0 },
+                IbusSignal::ForwardKeyEvent { keyval: 0xff0d, keycode: 36, state: IBUS_RELEASE_MASK },
+            ]
+        );
     }
 }
