@@ -1,0 +1,36 @@
+# Changelog
+
+Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại tệp này.
+
+Định dạng tuân theo [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), và phiên bản sử dụng quy tắc `{year}.{month}.{number}`.
+
+## [Unreleased]
+
+## [2026.11.0] - 2026-11-24
+
+### Added
+
+- **Lõi xử lý tiếng Việt (`vntype-syllable`, `vntype-core`, `vntype-engine`, `vntype-config`, `vntype-adapter`, `vntype-ffi`)**:
+  - Hỗ trợ đầy đủ các kiểu gõ `Telex`, `Simple Telex`, `VNI`, `VIQR` và 18 bảng mã tiếng Việt (`Unicode NFC/NFD`, `TCVN3`, `VNI Windows`, `VIQR`, v.v.).
+  - Hỗ trợ quy tắc đặt dấu mới/cũ, kiểm tra chính tả, cho phép gõ tự do (`free_typing`), tự động khôi phục phím với từ sai (`auto_restore_keys`), sửa từ trước bằng `Backspace`, tự viết hoa đầu câu, giữ chữ hoa 2 chữ cái đầu, và bảng gõ tắt (`macros.txt`).
+  - Hỗ trợ bật/tắt theo từng ứng dụng (`per_app_mode`) và nhận diện ô nhập mật khẩu/URL.
+  - Công cụ dòng lệnh `vntype-cli` và tầng C ABI (`vntype-ffi`).
+- **Windows (`vntype-hook`, `vntype-settings`, `vntype-tsf`, `vntype-win-ipc`)**:
+  - Trình nền `WH_KEYBOARD_LL` + TSF COM DLL, biểu tượng khay hệ thống `V`/`E` với menu phân nhóm (Bảng mã, Kiểu gõ).
+  - Giao diện cài đặt Win32 thuần chuẩn Windows 11 (`ComCtl32 v6`), hỗ trợ `PerMonitorV2` DPI (`WM_DPICHANGED`), logo ứng dụng (`vntype.ico`), cơ chế single-instance, và chuyển đổi giao diện song ngữ Việt / Anh.
+  - Phím tắt chuyển ngôn ngữ `Ctrl + Shift` và `Alt + Z`, tùy chọn gửi Unicode qua Clipboard, phát chuông và thông báo phản hồi khi chuyển trạng thái, khởi động cùng Windows, và mở hộp thoại khi khởi động.
+  - Script đóng gói bản portable `.zip` (`packaging/windows/package-zip.ps1`).
+- **Linux & macOS**:
+  - Daemon `linux-ibus` (D-Bus), addon `linux-fcitx5`, giao diện cài đặt GTK3 thuần trên Linux và script đóng gói `.deb` / `.rpm`.
+  - Module InputMethodKit và giao diện cài đặt SwiftUI thuần trên macOS cùng script đóng gói macOS.
+- **Tài liệu & Benchmark**:
+  - `README.md` kèm ảnh minh họa giao diện Windows & Linux, `DEVELOPMENT.md`, giấy phép `MIT` (`LICENSE`) và bộ benchmark Criterion.
+
+### Changed
+
+- Tách tầng `vntype-settings-core` dùng chung cho mọi nền tảng và đưa bảng mã tĩnh ra `data/charsets` sinh mã qua `build.rs`.
+- Chuyển giao diện cài đặt Windows từ `eframe` sang Win32 API thuần siêu nhẹ.
+- Áp dụng quy tắc phiên bản `{year}.{month}.{number}` bắt đầu từ `2026.11.0`.
+
+[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.0...HEAD
+[2026.11.0]: https://github.com/hephaestus-developers/vntype/releases/tag/v2026.11.0
