@@ -9,6 +9,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/hephaestus-developers/vntype/actions/workflows/ci.yml"><img src="https://github.com/hephaestus-developers/vntype/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/hephaestus-developers/vntype/releases"><img src="https://github.com/hephaestus-developers/vntype/actions/workflows/release.yml/badge.svg" alt="Release" /></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/rust-1.89%2B-orange?logo=rust" alt="Rust 1.89+" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License MIT" /></a>
+</p>
+
+<p align="center">
   <a href="docs/INSTALL.md">Hướng dẫn cài đặt</a> •
   <a href="#tính-năng-chính">Tính năng</a> •
   <a href="#hướng-dẫn-gõ-nhanh">Hướng dẫn gõ</a> •

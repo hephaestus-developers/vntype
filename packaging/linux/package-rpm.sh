@@ -31,9 +31,11 @@ trap 'rm -rf "$TOPDIR"' EXIT
 mkdir -p "$TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} "$OUT_DIR"
 
 FCITX_BUILD="$TOPDIR/fcitx5-build"
+RPM_LIBDIR="$(rpm --eval '%{_libdir}' | sed 's|^/||')"
 cmake -B "$FCITX_BUILD" -S "$ROOT_DIR/platforms/linux/fcitx5" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR="$RPM_LIBDIR"
 cmake --build "$FCITX_BUILD" -j"$(nproc)"
 
 STAGE="$TOPDIR/SOURCES/stage"
@@ -77,6 +79,7 @@ VNType Fcitx5 input method addon.
 
 %install
 rm -rf %{buildroot}
+mkdir -p %{buildroot}
 cp -a "$STAGE"/* %{buildroot}/
 
 %files -n vntype-cli
