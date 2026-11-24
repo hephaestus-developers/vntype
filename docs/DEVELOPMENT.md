@@ -9,28 +9,33 @@ Tài liệu này hướng dẫn lập trình viên thiết lập môi trường 
 ```text
 vntype/
 ├── crates/
-│   ├── vntype-syllable/   # Âm tiết, thanh điệu, kiểm tra chính tả (hỗ trợ no_std)
-│   ├── vntype-core/       # Composer, diff, rebuild, 16 bảng mã (hỗ trợ no_std)
-│   ├── vntype-config/     # Lược đồ Config, AppProfile, lưu nguyên tử
-│   ├── vntype-engine/     # ImeSession, macro, dictionary, surrounding port
-│   ├── vntype-adapter/    # AdapterController, lập kế hoạch Effect cho IME
-│   └── vntype-ffi/        # C ABI (libvntype_ffi) dùng cho Fcitx5 (C++) & macOS (Swift)
+│   ├── vntype-syllable/       # Âm tiết, thanh điệu, kiểm tra chính tả (hỗ trợ no_std)
+│   ├── vntype-core/           # Composer, diff, rebuild, 18 bảng mã (hỗ trợ no_std)
+│   ├── vntype-config/         # Lược đồ Config, AppProfile, lưu nguyên tử
+│   ├── vntype-settings-core/  # SettingsViewModel & PlatformCapabilities dùng chung
+│   ├── vntype-engine/         # ImeSession, macro, dictionary, surrounding port
+│   ├── vntype-adapter/        # AdapterController, lập kế hoạch Effect cho IME
+│   └── vntype-ffi/            # C ABI (libvntype_ffi) dùng cho Fcitx5 (C++) & macOS (Swift)
 ├── apps/
-│   └── vntype-cli/        # Công cụ dòng lệnh `vntype-cli`
+│   └── vntype-cli/            # Công cụ dòng lệnh `vntype-cli`
 ├── platforms/
 │   ├── linux/
-│   │   ├── ibus/          # Engine IBus thuần Rust (`vntype-ibus`)
-│   │   └── fcitx5/        # Addon Fcitx5 C++ (`libvntype.so` + CMake + CTest)
+│   │   ├── ibus/              # Engine IBus thuần Rust (`vntype-ibus`)
+│   │   ├── settings/          # Giao diện cấu hình GTK3 thuần Rust (`vntype-linux-settings`)
+│   │   └── fcitx5/            # Addon Fcitx5 C++ (`libvntype.so` + CMake + CTest)
 │   ├── windows/
-│   │   ├── ipc/           # Shared memory nguyên tử (`vntype-win-ipc`)
-│   │   ├── hook/          # Hook WH_KEYBOARD_LL + Tray + OSD (`vntype-hook`)
-│   │   ├── tsf/           # COM In-Process Text Service DLL (`vntype_tsf.dll`)
-│   │   └── settings/      # Giao diện cấu hình `eframe` (`vntype-settings`)
-│   └── macos/             # InputMethodKit (`VNTypeIM` + SwiftPM)
-└── packaging/
-    ├── linux/             # `package-deb.sh`, `package-rpm.sh`, `install-source.sh`
-    ├── windows/           # `package-zip.ps1`, `package-tsf.ps1`
-    └── macos/             # `package-macos.sh`
+│   │   ├── ipc/               # Shared memory nguyên tử (`vntype-win-ipc`)
+│   │   ├── hook/              # Hook WH_KEYBOARD_LL + Tray + Single-instance (`vntype-hook`)
+│   │   ├── tsf/               # COM In-Process Text Service DLL (`vntype_tsf.dll`)
+│   │   ├── settings/          # Giao diện cấu hình Win32 API thuần (`vntype-settings`)
+│   │   ├── vntype.ico         # Icon đa kích thước cho `.exe` và thanh tiêu đề
+│   │   └── vntype.rc          # Resource script nhúng icon
+│   └── macos/                 # InputMethodKit + SwiftUI (`VNTypeIM` + SwiftPM)
+├── packaging/
+│   ├── linux/                 # `package-deb.sh`, `package-rpm.sh`, `install-source.sh`
+│   ├── windows/               # `package-zip.ps1`, `package-tsf.ps1`
+│   └── macos/                 # `package-macos.sh`
+└── .github/workflows/         # `ci.yml` (CI) & `release.yml` (Release .deb/.rpm/.zip)
 ```
 
 ### Yêu cầu chung
@@ -50,24 +55,22 @@ vntype/
 
   ```bash
   sudo apt update
-  sudo apt install -y build-essential cmake pkg-config git \
-    libfcitx5core-dev fcitx5-modules-dev libdbus-1-dev \
-    libx11-dev libwayland-dev libxkbcommon-dev libgl1-mesa-dev
+  sudo apt install -y build-essential cmake pkg-config git extra-cmake-modules \
+    libgtk-3-dev libfcitx5core-dev libfcitx5utils-dev libdbus-1-dev dpkg-dev
   ```
 
 - **Fedora**:
 
   ```bash
-  sudo dnf install -y gcc-c++ cmake pkgconf-pkg-config git \
-    fcitx5-devel dbus-devel libX11-devel wayland-devel libxkbcommon-devel mesa-libGL-devel \
-    rpm-build
+  sudo dnf install -y gcc-c++ cmake pkgconf-pkg-config git extra-cmake-modules \
+    gtk3-devel fcitx5-devel dbus-devel rpm-build
   ```
 
 - **Arch Linux**:
 
   ```bash
-  sudo pacman -S --needed base-devel cmake pkgconf git \
-    fcitx5 dbus libx11 wayland libxkbcommon mesa
+  sudo pacman -S --needed base-devel cmake pkgconf git extra-cmake-modules \
+    gtk3 fcitx5 dbus
   ```
 
 #### 2. Build Rust workspace
@@ -97,7 +100,7 @@ ctest --test-dir platforms/linux/fcitx5/build --output-on-failure
 
    ```bash
    ./packaging/linux/package-deb.sh --debug
-   sudo dpkg -i dist/linux/vntype-ibus_0.1.0_amd64.deb
+   sudo dpkg -i dist/linux/vntype-ibus_*_amd64.deb
    ibus restart
    ```
 
@@ -120,7 +123,7 @@ ctest --test-dir platforms/linux/fcitx5/build --output-on-failure
 #### 1. Cài đặt công cụ
 
 - Cài **Rust** (`x86_64-pc-windows-msvc` hoặc `aarch64-pc-windows-msvc`) qua `rustup-init.exe`.
-- Cài **Visual Studio Build Tools** với workload **Desktop development with C++** (Windows 10/11 SDK + MSVC linker).
+- Cài **Visual Studio Build Tools** với workload **Desktop development with C++** (Windows 10/11 SDK có `rc.exe` + MSVC linker để nhúng `vntype.manifest` chuẩn Windows 11 Visual Styles / `PerMonitorV2` và icon `vntype.ico`).
 
 #### 2. Build & kiểm tra nhanh trên Windows
 
@@ -220,7 +223,15 @@ cargo run -p vntype-cli -- --help
 
 ---
 
-## 4. Quy tắc đóng góp
+## 4. Quy tắc phiên bản & Phát hành (Release)
+
+- **Định dạng phiên bản**: VNType sử dụng `{year}.{month}.{number}` (ví dụ `2026.11.0`), cấu hình tập trung tại `[workspace.package]` trong [Cargo.toml](../Cargo.toml). Không dùng số `0` đứng đầu ở bất kỳ thành phần nào để tương thích chuẩn SemVer của Cargo.
+- **Nhật ký thay đổi**: Cập nhật [CHANGELOG.md](../CHANGELOG.md) theo chuẩn [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
+- **Phát hành tự động**: Khi push tag dạng `v*` (ví dụ `git tag v2026.11.0 && git push origin main v2026.11.0`), workflow [release.yml](../.github/workflows/release.yml) sẽ tự động build các gói `.deb`, `.rpm` (Linux) và `.zip` portable (Windows) rồi tạo GitHub Release.
+
+---
+
+## 5. Quy tắc đóng góp
 
 - Giữ phần lõi (`vntype-syllable`, `vntype-core`) tương thích `no_std`.
 - Các binding phụ thuộc hệ điều hành cụ thể đặt sau cờ `#[cfg(windows)]` / `#[cfg(target_os = "linux")]` / `#[cfg(target_os = "macos")]` để toàn workspace luôn `cargo check` và `cargo test` được trên mọi máy phát triển.
