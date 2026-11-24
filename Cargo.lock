@@ -1209,7 +1209,7 @@ checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
 
 [[package]]
 name = "vntype-adapter"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "criterion",
  "vntype-engine",
@@ -1217,7 +1217,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-cli"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "vntype-adapter",
  "vntype-config",
@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-config"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "blake3",
  "serde",
@@ -1238,7 +1238,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-core"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-engine"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "criterion",
  "unicode-normalization",
@@ -1259,7 +1259,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-ffi"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "serde_json",
  "vntype-adapter",
@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-hook"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "vntype-adapter",
  "vntype-config",
@@ -1283,7 +1283,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-ibus"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-linux-settings"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "gtk",
  "serde_json",
@@ -1306,7 +1306,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-settings"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "serde_json",
  "vntype-config",
@@ -1318,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-settings-core"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1328,7 +1328,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-syllable"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "criterion",
  "serde",
@@ -1338,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-tsf"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "vntype-adapter",
  "vntype-config",
@@ -1351,7 +1351,7 @@ dependencies = [
 
 [[package]]
 name = "vntype-win-ipc"
-version = "0.1.0"
+version = "2026.11.0"
 dependencies = [
  "windows-sys",
 ]
