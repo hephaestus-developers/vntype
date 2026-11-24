@@ -38,11 +38,20 @@
   - Tuỳ chọn `w → ư`, phím `[ ] → ơ, ư`, gõ tắt phụ âm đầu (Quick Telex), viết hoa đầu câu / viết hoa thông minh và bảng gõ tắt (**Macro**).
 - **Nhận diện ngữ cảnh nhập liệu**: Tự động chuyển sang tiếng Anh tại các ô nhập mật khẩu và hỗ trợ cấu hình riêng theo từng ứng dụng.
 
-<p align="center">
-  <img src="docs/assets/settings-linux.png" alt="Giao diện cài đặt VNType trên Linux" width="520" />
-  <br />
-  <sub><em>Giao diện cài đặt VNType trên Linux (GTK3)</em></sub>
-</p>
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="docs/assets/settings-windows.png" alt="Giao diện cài đặt VNType trên Windows" width="420" />
+      <br />
+      <sub><em>Giao diện cài đặt VNType trên Windows (Win32)</em></sub>
+    </td>
+    <td align="center">
+      <img src="docs/assets/settings-linux.png" alt="Giao diện cài đặt VNType trên Linux" width="420" />
+      <br />
+      <sub><em>Giao diện cài đặt VNType trên Linux (GTK3)</em></sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
