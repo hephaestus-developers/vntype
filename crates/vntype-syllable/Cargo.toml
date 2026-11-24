@@ -18,3 +18,11 @@ serde = ["dep:serde"]
 serde = { workspace = true, optional = true }
 spin = { version = "0.12.3", default-features = false, features = ["once"] }
 unicode-normalization = { workspace = true, default-features = false }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "syllable_bench"
+harness = false
+required-features = ["std"]

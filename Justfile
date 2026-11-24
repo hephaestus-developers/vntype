@@ -28,6 +28,10 @@ check:
 test *args:
     cargo test --workspace {{args}}
 
+# Chạy bộ benchmark hiệu năng (Criterion)
+bench *args:
+    cargo bench -p vntype-syllable -p vntype-core -p vntype-engine -p vntype-adapter {{args}}
+
 # Tạo tài liệu rustdoc và báo lỗi nếu có cảnh báo
 doc:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps

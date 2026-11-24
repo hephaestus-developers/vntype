@@ -11,3 +11,10 @@ repository.workspace = true
 
 [dependencies]
 vntype-engine = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "adapter_bench"
+harness = false

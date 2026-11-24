@@ -14,3 +14,10 @@ vntype-syllable = { workspace = true, features = ["std", "serde"] }
 vntype-core = { workspace = true }
 vntype-config = { workspace = true }
 unicode-normalization = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "engine_bench"
+harness = false
