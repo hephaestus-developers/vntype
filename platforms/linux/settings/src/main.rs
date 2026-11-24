@@ -69,6 +69,7 @@ fn build_ui(app: &gtk::Application, vm_cell: Rc<RefCell<SettingsViewModel>>) {
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title(format!("VNType {}", env!("CARGO_PKG_VERSION")))
+        .icon_name("vntype")
         .default_width(600)
         .resizable(false)
         .border_width(12)

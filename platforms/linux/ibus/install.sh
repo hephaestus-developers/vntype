@@ -13,7 +13,12 @@ COMPONENT_DIR="$PREFIX/share/ibus/component"
 
 if [ "${1:-}" = "--uninstall" ]; then
     echo "==> Gỡ cài đặt vntype-ibus và vntype-linux-settings khỏi $PREFIX"
-    sudo rm -f "$LIBEXECDIR/vntype-ibus" "$PREFIX/bin/vntype-linux-settings" "$COMPONENT_DIR/vntype.xml"
+    sudo rm -f \
+        "$LIBEXECDIR/vntype-ibus" \
+        "$PREFIX/bin/vntype-linux-settings" \
+        "$PREFIX/share/applications/dev.hephaestus.vntype.settings.desktop" \
+        "$PREFIX/share/icons/hicolor/scalable/apps/vntype.svg" \
+        "$COMPONENT_DIR/vntype.xml"
     ibus write-cache >/dev/null 2>&1 || true
     echo "==> Đã gỡ cài đặt vntype-ibus và vntype-linux-settings."
     exit 0
@@ -30,6 +35,8 @@ echo "==> Biên dịch vntype-ibus và vntype-linux-settings"
 echo "==> Cài đặt tệp thực thi và mô tả thành phần IBus vào $PREFIX"
 sudo install -Dm755 "$ROOT/target/release/vntype-ibus" "$LIBEXECDIR/vntype-ibus"
 sudo install -Dm755 "$ROOT/target/release/vntype-linux-settings" "$PREFIX/bin/vntype-linux-settings"
+sudo install -Dm644 "$ROOT/platforms/linux/settings/data/dev.hephaestus.vntype.settings.desktop" "$PREFIX/share/applications/dev.hephaestus.vntype.settings.desktop"
+sudo install -Dm644 "$ROOT/docs/assets/logo.svg" "$PREFIX/share/icons/hicolor/scalable/apps/vntype.svg"
 TMP_XML="$(mktemp)"
 sed "s|@LIBEXECDIR@|$LIBEXECDIR|g" "$HERE/data/vntype.xml.in" > "$TMP_XML"
 sudo install -Dm644 "$TMP_XML" "$COMPONENT_DIR/vntype.xml"

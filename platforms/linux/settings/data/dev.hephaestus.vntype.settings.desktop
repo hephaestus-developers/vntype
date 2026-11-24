@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=VNType Settings
+Name[vi]=Cài đặt VNType
+Comment=Configure VNType Vietnamese input method
+Comment[vi]=Cấu hình bộ gõ tiếng Việt VNType
+Exec=vntype-linux-settings
+Icon=vntype
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=vietnamese;ime;input;telex;vni;vntype;
+StartupNotify=true
+StartupWMClass=vntype-linux-settings

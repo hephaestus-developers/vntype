@@ -80,7 +80,7 @@ build_deb() {
         echo "Section: utils"
         echo "Priority: optional"
         echo "Architecture: $ARCH"
-        echo "Maintainer: Hephaestus Studio <dev@hephaestus.dev>"
+        echo "Maintainer: Hephaestus Developers <haiphamngoc.tech@gmail.com>"
         if [[ -n "$deps" ]]; then
             echo "Depends: $deps"
         fi
@@ -101,6 +101,12 @@ build_deb "vntype-cli" "" "VNType Vietnamese input method CLI"
 IBUS_ROOT="$STAGE_DIR/vntype-ibus"
 install -Dm755 "$ROOT_DIR/target/$PROFILE/vntype-ibus" "$IBUS_ROOT/usr/libexec/vntype-ibus"
 install -Dm755 "$ROOT_DIR/target/$PROFILE/vntype-linux-settings" "$IBUS_ROOT/usr/bin/vntype-linux-settings"
+install -Dm644 \
+    "$ROOT_DIR/platforms/linux/settings/data/dev.hephaestus.vntype.settings.desktop" \
+    "$IBUS_ROOT/usr/share/applications/dev.hephaestus.vntype.settings.desktop"
+install -Dm644 \
+    "$ROOT_DIR/docs/assets/logo.svg" \
+    "$IBUS_ROOT/usr/share/icons/hicolor/scalable/apps/vntype.svg"
 mkdir -p "$IBUS_ROOT/usr/share/ibus/component"
 sed 's|@LIBEXECDIR@|/usr/libexec|g' \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \

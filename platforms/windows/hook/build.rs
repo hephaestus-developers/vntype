@@ -2,14 +2,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn find_rc_exe() -> Option<PathBuf> {
-    if let Ok(output) = Command::new("where.exe").arg("rc.exe").output() {
-        if output.status.success() {
-            if let Some(first) = String::from_utf8_lossy(&output.stdout).lines().next() {
-                let p = PathBuf::from(first.trim());
-                if p.exists() {
-                    return Some(p);
-                }
-            }
+    if let Ok(output) = Command::new("where.exe").arg("rc.exe").output()
+        && output.status.success()
+        && let Some(first) = String::from_utf8_lossy(&output.stdout).lines().next()
+    {
+        let p = PathBuf::from(first.trim());
+        if p.exists() {
+            return Some(p);
         }
     }
     let kits_bin = Path::new(r"C:\Program Files (x86)\Windows Kits\10\bin");
