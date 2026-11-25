@@ -36,8 +36,8 @@ thiserror = "2.0.21"
 blake3 = { version = "1.8.7", features = ["pure"] }
 zbus = "6.5.0"
 windows = "0.62.2"
-windows-core = "0.62.2"
-windows-implement = "0.60.2"
+windows-core = "0.100.0"
+windows-implement = "0.100.0"
 windows-sys = "0.61.2"
 gtk = "0.19.0"
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
