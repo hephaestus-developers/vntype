@@ -32,7 +32,7 @@ jobs:
         run: bash packaging/linux/package-deb.sh --release
 
       - name: Upload .deb artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-deb
           path: dist/linux/*.deb
@@ -56,7 +56,7 @@ jobs:
         run: bash packaging/linux/package-rpm.sh
 
       - name: Upload .rpm artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-rpm
           path: dist/linux/*.rpm
@@ -84,7 +84,7 @@ jobs:
           ./packaging/windows/package-zip.ps1 -Arch ${{ matrix.arch }} -Target ${{ matrix.target }}
 
       - name: Upload Windows .zip artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-zip-${{ matrix.arch }}
           path: dist/windows/*.zip
