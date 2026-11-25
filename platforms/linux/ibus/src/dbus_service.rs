@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use vntype_adapter::{AdapterController, Effect, char_to_utf16_offset};
 use vntype_config::{
@@ -15,21 +15,31 @@ use vntype_engine::{FieldKind, Key, OutputMode};
 use crate::keymap::{IBUS_RELEASE_MASK, translate_ibus_key};
 
 #[cfg(all(debug_assertions, not(test)))]
-fn debug_log(msg: &str) {
+fn write_debug_log(msg: &str) {
     use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
-    let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    if let Ok(mut f) =
-        std::fs::OpenOptions::new().create(true).append(true).open("/tmp/vntype-ibus-debug.log")
+
+    static LOG_FILE: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+    let lock = LOG_FILE.get_or_init(|| {
+        Mutex::new(
+            std::fs::OpenOptions::new().create(true).append(true).open("/tmp/vntype-ibus-debug.log").ok(),
+        )
+    });
+    if let Ok(mut guard) = lock.lock()
+        && let Some(f) = guard.as_mut()
     {
+        let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
         let _ = writeln!(f, "[{}.{:03}] {msg}", elapsed.as_secs(), elapsed.subsec_millis());
-        let _ = f.flush();
     }
 }
 
-#[cfg(not(all(debug_assertions, not(test))))]
-#[inline]
-fn debug_log(_msg: &str) {}
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        #[cfg(all(debug_assertions, not(test)))]
+        write_debug_log(&format!($($arg)*));
+    };
+}
 
 /// Tín hiệu đầu ra phát từ dịch vụ IBus Engine xuống IBus Daemon qua D-Bus.
 #[derive(Debug, Clone, PartialEq)]
@@ -89,8 +99,10 @@ pub struct IbusEngineService {
     macros_path: PathBuf,
     macros_mtime: Option<SystemTime>,
     file_macros: HashMap<String, String>,
+    last_reload_check: Option<Instant>,
     signals: Vec<IbusSignal>,
     holding_eaten_backspace: bool,
+    preedit_visible: bool,
 }
 
 fn merge_config_macros(base: &Config, file_macros: &HashMap<String, String>) -> Config {
@@ -119,8 +131,10 @@ impl IbusEngineService {
             macros_path,
             macros_mtime,
             file_macros,
+            last_reload_check: None,
             signals: Vec::new(),
             holding_eaten_backspace: false,
+            preedit_visible: false,
         }
     }
 
@@ -144,7 +158,7 @@ impl IbusEngineService {
             self.holding_eaten_backspace = false;
             return false;
         }
-        self.reload_config_if_needed();
+        self.reload_config_if_needed(false);
         let effects = self.controller.process_key(ev.clone(), keyval);
         let handled = self.apply_effects(effects, keyval, keycode, state);
         if keyval == 0xff08 {
@@ -154,27 +168,35 @@ impl IbusEngineService {
         } else {
             self.holding_eaten_backspace = false;
         }
-        debug_log(&format!(
+        debug_log!(
             "KEY keyval={keyval:#x} keycode={keycode} state={state:#x} ev={ev:?} -> handled={handled} display={:?} adopted={} signals={:?}",
             self.controller.display_text(),
             self.controller.session().is_adopted(),
             self.signals,
-        ));
+        );
         handled
     }
 
     /// Xử lý tín hiệu `SetSurroundingText(text, cursor_chars, anchor_chars)` từ IBus.
     pub fn set_surrounding_text(&mut self, text: &str, cursor_chars: u32, anchor_chars: u32) {
-        debug_log(&format!("SET_SURROUNDING text={text:?} cursor={cursor_chars} anchor={anchor_chars}"));
-        let Some(c_u16) = char_to_utf16_offset(text, cursor_chars) else {
+        if !self.controller.display_text().is_empty() {
+            return;
+        }
+        if cursor_chars != anchor_chars {
+            debug_log!("SET_SURROUNDING selection cursor={cursor_chars} anchor={anchor_chars}");
+            self.controller.set_surrounding_utf16(Some(""), 0, 1);
+            return;
+        }
+        let Some((clean, c_chars)) = window_and_strip_surrounding(text, cursor_chars) else {
             self.controller.set_surrounding_utf16(None, 0, 0);
             return;
         };
-        let Some(a_u16) = char_to_utf16_offset(text, anchor_chars) else {
+        debug_log!("SET_SURROUNDING raw_bytes={} window={clean:?} cursor={c_chars}", text.len());
+        let Some(c_u16) = char_to_utf16_offset(&clean, c_chars) else {
             self.controller.set_surrounding_utf16(None, 0, 0);
             return;
         };
-        self.controller.set_surrounding_utf16(Some(text), c_u16, a_u16);
+        self.controller.set_surrounding_utf16(Some(&clean), c_u16, c_u16);
     }
 
     /// Xử lý tín hiệu `SetContentType(purpose, hints)` từ IBus.
@@ -186,7 +208,7 @@ impl IbusEngineService {
             8 => FieldKind::Password,
             _ => FieldKind::Text,
         };
-        debug_log(&format!("SET_CONTENT_TYPE purpose={purpose} -> {kind:?}"));
+        debug_log!("SET_CONTENT_TYPE purpose={purpose} -> {kind:?}");
         let effects = self.controller.set_field_kind(kind);
         self.apply_effects(effects, 0, 0, 0);
     }
@@ -223,8 +245,8 @@ impl IbusEngineService {
         }
 
         if name == "vntype.macro.edit" {
-            if let Err(err) = ensure_macros_file(&self.macros_path) {
-                debug_log(&format!("MACRO_EDIT ensure_macros_file err={err}"));
+            if let Err(_err) = ensure_macros_file(&self.macros_path) {
+                debug_log!("MACRO_EDIT ensure_macros_file err={_err}");
                 return;
             }
             self.macros_mtime = std::fs::metadata(&self.macros_path).and_then(|m| m.modified()).ok();
@@ -309,16 +331,16 @@ impl IbusEngineService {
 
     /// Xử lý sự kiện nhận tiêu điểm `FocusIn(app_id)`.
     pub fn focus_in(&mut self, app_id: Option<&str>) {
-        debug_log(&format!("FOCUS_IN app_id={app_id:?}"));
+        debug_log!("FOCUS_IN app_id={app_id:?}");
         self.holding_eaten_backspace = false;
+        self.reload_config_if_needed(false);
         let effects = self.controller.focus_changed(app_id);
         self.apply_effects(effects, 0, 0, 0);
-        self.emit_register_menu();
     }
 
     /// Xử lý sự kiện mất tiêu điểm `FocusOut()`.
     pub fn focus_out(&mut self) {
-        debug_log("FOCUS_OUT");
+        debug_log!("FOCUS_OUT");
         self.holding_eaten_backspace = false;
         let effects = self.controller.flush();
         self.apply_effects(effects, 0, 0, 0);
@@ -329,13 +351,14 @@ impl IbusEngineService {
     /// Lưu ý: IBus gửi `Reset` ngay sau khi phím Backspace xoá dấu cách. Nếu phiên vừa khôi phục
     /// từ đã chốt (`is_adopted()`), ta chỉ ẩn vùng gạch chân mà không xoá trạng thái từ đó.
     pub fn reset(&mut self) {
-        debug_log(&format!("RESET adopted={}", self.controller.session().is_adopted()));
-        if self.controller.session().is_adopted() {
-            self.signals.push(IbusSignal::HidePreeditText);
-            return;
+        debug_log!("RESET adopted={}", self.controller.session().is_adopted());
+        if !self.controller.session().is_adopted() {
+            self.controller.reset();
         }
-        self.controller.reset();
-        self.signals.push(IbusSignal::HidePreeditText);
+        if self.preedit_visible {
+            self.preedit_visible = false;
+            self.signals.push(IbusSignal::HidePreeditText);
+        }
     }
 
     fn apply_effects(&mut self, effects: Vec<Effect>, keyval: u32, keycode: u32, state: u32) -> bool {
@@ -344,10 +367,14 @@ impl IbusEngineService {
         for eff in effects {
             match eff {
                 Effect::SetPreedit { text, cursor_utf16, .. } => {
+                    self.preedit_visible = true;
                     self.signals.push(IbusSignal::UpdatePreeditText { text, cursor_utf16, visible: true });
                 }
                 Effect::ClearPreedit => {
-                    self.signals.push(IbusSignal::HidePreeditText);
+                    if self.preedit_visible {
+                        self.preedit_visible = false;
+                        self.signals.push(IbusSignal::HidePreeditText);
+                    }
                 }
                 Effect::CommitText { text } => {
                     emitted_commit = true;
@@ -388,10 +415,18 @@ impl IbusEngineService {
         !forward_original
     }
 
-    fn reload_config_if_needed(&mut self) {
+    fn reload_config_if_needed(&mut self, force: bool) {
         if !self.controller.display_text().is_empty() {
             return;
         }
+        let now = Instant::now();
+        if !force
+            && let Some(prev) = self.last_reload_check
+            && now.duration_since(prev) < Duration::from_secs(2)
+        {
+            return;
+        }
+        self.last_reload_check = Some(now);
         let cfg_mtime = std::fs::metadata(&self.config_path).and_then(|m| m.modified()).ok();
         let mac_mtime = std::fs::metadata(&self.macros_path).and_then(|m| m.modified()).ok();
         let mut dirty = false;
@@ -413,6 +448,37 @@ impl IbusEngineService {
             self.apply_effects(effects, 0, 0, 0);
         }
     }
+}
+
+const MAX_SURROUNDING_BEFORE_CHARS: usize = 128;
+
+fn window_and_strip_surrounding(text: &str, cursor_chars: u32) -> Option<(String, u32)> {
+    let cursor = cursor_chars as usize;
+    let start = cursor.saturating_sub(MAX_SURROUNDING_BEFORE_CHARS);
+    let mut clean = String::with_capacity((cursor - start + 1).min(MAX_SURROUNDING_BEFORE_CHARS + 1) * 2);
+    let mut clean_cursor = 0u32;
+    let mut seen = 0usize;
+
+    for (idx, ch) in text.chars().enumerate() {
+        seen = idx + 1;
+        if idx < start {
+            continue;
+        }
+        if idx < cursor {
+            if ch != '\u{200b}' {
+                clean.push(ch);
+                clean_cursor += 1;
+            }
+        } else if ch != '\u{200b}' {
+            clean.push(ch);
+            break;
+        }
+    }
+
+    if seen < cursor {
+        return None;
+    }
+    Some((clean, clean_cursor))
 }
 
 #[cfg(test)]
@@ -449,9 +515,17 @@ mod tests {
         assert!(sigs.iter().any(|s| matches!(s, IbusSignal::DeleteSurroundingText { nchars: 3, .. })));
         assert!(sigs.iter().any(|s| matches!(s, IbusSignal::CommitText { text } if text == "ếng")));
 
-        // Reset khi đang adopted chỉ ẩn preedit, không xoá trạng thái từ đang sửa
+        // Reset khi đang adopted không xoá trạng thái từ đang sửa và không phát HidePreeditText thừa khi chưa có preedit
         svc.reset();
-        assert_eq!(svc.drain_signals(), vec![IbusSignal::HidePreeditText]);
+        assert!(svc.drain_signals().is_empty());
+        assert!(svc.controller.session().is_adopted());
+
+        // Khi Backspace xoá từ đã adopt, chỉ phát DeleteSurroundingText mà không phát HidePreeditText thừa
+        assert!(svc.process_key_event(0xff08, 14, 0));
+        assert_eq!(
+            svc.drain_signals(),
+            vec![IbusSignal::DeleteSurroundingText { offset_chars: -1, nchars: 1 }]
+        );
 
         // Chuyển sang ô mật khẩu -> pass phím qua
         svc.set_content_type(8, 0);
@@ -564,10 +638,42 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&macros_path, "dc=được\n").unwrap();
         svc.macros_mtime = None;
-        svc.reload_config_if_needed();
+        svc.reload_config_if_needed(true);
         assert_eq!(svc.current_config().macros.get("dc").map(String::as_str), Some("được"));
         assert!(!svc.current_config().macros.contains_key("ko"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_surrounding_ignores_zwsp_and_active_preedit_echo() {
+        let mut svc = IbusEngineService::new(PathBuf::from("/nonexistent/config.json"));
+        svc.set_surrounding_text("gõ \u{200b}\n", 4, 4);
+        // Không bị lỗi offset khi loại bỏ '\u{200b}'
+        svc.set_surrounding_text("tiêng\u{200b}", 6, 6);
+        assert!(svc.process_key_event(b's' as u32, 0, 0));
+        let sigs = svc.drain_signals();
+        assert!(sigs.iter().any(|s| matches!(s, IbusSignal::CommitText { text } if text == "ếng")));
+
+        // Khi đang có preedit dở dang, SetSurroundingText trễ từ app không được làm hỏng trạng thái
+        svc.process_key_event(b' ' as u32, 0, 0);
+        let _ = svc.drain_signals();
+        assert!(svc.process_key_event(b't' as u32, 0, 0));
+        svc.set_surrounding_text("rác ", 4, 4);
+        assert!(svc.process_key_event(b'i' as u32, 0, 0));
+        let sigs2 = svc.drain_signals();
+        assert!(
+            sigs2.iter().any(|s| matches!(s, IbusSignal::UpdatePreeditText { text, .. } if text == "ti"))
+        );
+
+        // Văn bản surrounding rất dài (10.000+ ký tự) được cắt cửa sổ gọn quanh con trỏ vẫn adopt đúng
+        svc.process_key_event(b' ' as u32, 0, 0);
+        let _ = svc.drain_signals();
+        let long_text = format!("{} tiêng{}", "a ".repeat(5000), " xyz".repeat(100));
+        let cursor = ("a ".repeat(5000) + " tiêng").chars().count() as u32;
+        svc.set_surrounding_text(&long_text, cursor, cursor);
+        assert!(svc.process_key_event(b's' as u32, 0, 0));
+        let sigs3 = svc.drain_signals();
+        assert!(sigs3.iter().any(|s| matches!(s, IbusSignal::CommitText { text } if text == "ếng")));
     }
 }

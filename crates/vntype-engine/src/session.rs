@@ -461,6 +461,7 @@ impl ImeSession {
     /// Cập nhật ngữ cảnh khi người dùng chuyển sang ứng dụng khác (`app_id`).
     pub fn focus_changed(&mut self, app_id: Option<&str>) -> Action {
         let act = self.flush();
+        self.field = FieldKind::Text;
         self.cap_next = false;
         self.pending_end = false;
         self.profile = resolve_profile(&self.config, app_id);
@@ -1024,6 +1025,10 @@ mod tests {
         let (mut s_url, _) = make_session(cfg, OutputMode::Preedit, None);
         s_url.set_field_kind(FieldKind::Url);
         assert_eq!(s_url.process_key(&KeyEvent::ch('w')), Action::Preedit { text: "w".into(), cursor: 1 });
+
+        s_url.focus_changed(None);
+        assert_eq!(s_url.field_kind(), FieldKind::Text);
+        assert_eq!(s_url.process_key(&KeyEvent::ch('w')), Action::Preedit { text: "ư".into(), cursor: 1 });
     }
 
     #[test]

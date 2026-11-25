@@ -14,12 +14,15 @@ pub const IBUS_MOD1_MASK: u32 = 1 << 3;
 pub const IBUS_SUPER_MASK: u32 = 1 << 26;
 /// Mặt nạ phím Meta (`IBUS_META_MASK`).
 pub const IBUS_META_MASK: u32 = 1 << 28;
+/// Mặt nạ đánh dấu sự kiện phím đã được engine chuyển tiếp (`IBUS_IGNORED_MASK`).
+pub const IBUS_IGNORED_MASK: u32 = 1 << 25;
 
 /// Chuyển đổi cặp `(keyval, state)` từ giao thức IBus `ProcessKeyEvent` sang [`KeyEvent`].
 ///
-/// Trả về `None` nếu là sự kiện nhả phím (`RELEASE_MASK`) hoặc mã phím không ánh xạ được.
+/// Trả về `None` nếu là sự kiện nhả phím (`RELEASE_MASK`), phím bị bỏ qua (`IBUS_IGNORED_MASK`)
+/// hoặc mã phím không ánh xạ được.
 pub fn translate_ibus_key(keyval: u32, state: u32) -> Option<KeyEvent> {
-    if (state & IBUS_RELEASE_MASK) != 0 {
+    if (state & (IBUS_RELEASE_MASK | IBUS_IGNORED_MASK)) != 0 {
         return None;
     }
     let ctrl = (state & IBUS_CONTROL_MASK) != 0;
@@ -72,5 +75,6 @@ mod tests {
         assert_eq!(translate_ibus_key(0xff08, 0), Some(KeyEvent::new(Key::Backspace)));
         assert_eq!(translate_ibus_key(0x0100_0111, 0), Some(KeyEvent::ch('đ')));
         assert_eq!(translate_ibus_key(b'a' as u32, IBUS_RELEASE_MASK), None);
+        assert_eq!(translate_ibus_key(b'a' as u32, IBUS_IGNORED_MASK), None);
     }
 }
