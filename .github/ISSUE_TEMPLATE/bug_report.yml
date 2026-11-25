@@ -1,0 +1,81 @@
+name: Báo lỗi (Bug Report)
+description: Báo cáo lỗi khi gõ tiếng Việt, giao diện cài đặt hoặc cài đặt/đóng gói
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cảm ơn bạn đã báo lỗi cho **VNType**! Vui lòng điền đầy đủ thông tin bên dưới để chúng tôi tái hiện và xử lý nhanh nhất.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Hệ điều hành / Môi trường
+      description: Chọn hệ điều hành và môi trường hiển thị bạn đang sử dụng
+      options:
+        - Linux (Wayland - IBus)
+        - Linux (X11 - IBus)
+        - Linux (Fcitx5)
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Phiên bản VNType
+      description: Ví dụ `2026.11.2` hoặc mã commit
+      placeholder: "2026.11.2"
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Ứng dụng gặp lỗi
+      description: Ví dụ Chrome, Firefox, VS Code, Kitty, Word, Telegram...
+      placeholder: "VS Code / Chrome / ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: input_method
+    attributes:
+      label: Kiểu gõ
+      options:
+        - Telex
+        - Simple Telex
+        - VNI
+        - VIQR
+    validations:
+      required: true
+  - type: input
+    id: charset
+    attributes:
+      label: Bảng mã
+      placeholder: "Unicode (NFC)"
+      value: "Unicode (NFC)"
+  - type: textarea
+    id: description
+    attributes:
+      label: Mô tả lỗi
+      description: Mô tả ngắn gọn điều gì đã xảy ra và kết quả bạn mong đợi
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Các bước tái hiện
+      description: Chuỗi phím bạn đã gõ hoặc thao tác dẫn đến lỗi
+      placeholder: |
+        1. Mở ứng dụng ...
+        2. Gõ chuỗi phím "..."
+        3. Kết quả hiển thị "..." thay vì "..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log / Ảnh chụp màn hình (nếu có)
+      description: Dán đoạn log (ví dụ `/tmp/vntype-ibus-debug.log` trên Linux) hoặc kéo thả ảnh minh họa vào đây
+      render: shell

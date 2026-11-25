@@ -1,0 +1,36 @@
+name: Đề xuất tính năng (Feature Request)
+description: Đề xuất tính năng mới hoặc cải tiến cho VNType
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Phạm vi áp dụng
+      options:
+        - Lõi bộ gõ (Telex / VNI / VIQR / Bảng mã / Gõ tắt)
+        - Linux (IBus / Fcitx5 / GTK Settings)
+        - Windows (Hook / TSF / Win32 Settings)
+        - macOS (InputMethodKit / SwiftUI Settings)
+        - Đóng gói / Tài liệu / Khác
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Vấn đề hoặc nhu cầu hiện tại
+      description: Mô tả bài toán bạn đang gặp phải hoặc lý do cần tính năng này
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Giải pháp đề xuất
+      description: Mô tả cách bạn mong muốn tính năng này hoạt động
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Phương án thay thế / Tham khảo thêm (nếu có)
+      description: Các bộ gõ hoặc công cụ khác giải quyết tương tự, hoặc ví dụ cụ thể

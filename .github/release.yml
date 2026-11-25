@@ -1,0 +1,25 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot[bot]
+  categories:
+    - title: "Tính năng mới (Features)"
+      labels:
+        - enhancement
+        - feat
+    - title: "Sửa lỗi (Bug Fixes)"
+      labels:
+        - bug
+        - fix
+    - title: "Hiệu năng & Tối ưu (Performance)"
+      labels:
+        - perf
+    - title: "Đóng gói & Tài liệu (Packaging & Docs)"
+      labels:
+        - documentation
+        - packaging
+    - title: "Thay đổi khác (Maintenance)"
+      labels:
+        - "*"

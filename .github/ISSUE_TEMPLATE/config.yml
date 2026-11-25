@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Hướng dẫn cài đặt & sử dụng (INSTALL.md)
+    url: https://github.com/hephaestus-developers/vntype/blob/main/docs/INSTALL.md
+    about: Xem hướng dẫn cài đặt trên Linux, Windows và macOS trước khi tạo issue
+  - name: Tài liệu phát triển (DEVELOPMENT.md)
+    url: https://github.com/hephaestus-developers/vntype/blob/main/docs/DEVELOPMENT.md
+    about: Kiến trúc workspace, quy ước mã nguồn và cách build/test
