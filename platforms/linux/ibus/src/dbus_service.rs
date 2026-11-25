@@ -12,7 +12,7 @@ use vntype_config::{
 };
 use vntype_engine::{FieldKind, Key, OutputMode};
 
-use crate::keymap::{IBUS_RELEASE_MASK, translate_ibus_key};
+use crate::keymap::{IBUS_RELEASE_MASK, IBUS_SYSTEM_MODIFIER_MASK, translate_ibus_key};
 
 #[cfg(all(debug_assertions, not(test)))]
 fn write_debug_log(msg: &str) {
@@ -154,7 +154,9 @@ impl IbusEngineService {
         let Some(ev) = translate_ibus_key(keyval, state) else {
             return false;
         };
-        if ev.alt && !ev.ctrl && !ev.meta && ev.key == Key::Char(',') {
+        // Trên Linux/IBus việc chuyển bộ gõ do desktop/IBus đảm nhận;
+        // không chặn Alt+, hoặc Alt+Z của ứng dụng/hệ thống.
+        if ev.alt && !ev.ctrl && !ev.meta && matches!(ev.key, Key::Char(',' | 'z' | 'Z')) {
             self.holding_eaten_backspace = false;
             return false;
         }
@@ -399,7 +401,9 @@ impl IbusEngineService {
                 }
             }
         }
-        let should_forward_sync = keycode != 0
+        let has_system_modifier = (state & IBUS_SYSTEM_MODIFIER_MASK) != 0;
+        let should_forward_sync = !has_system_modifier
+            && keycode != 0
             && keyval != 0
             && forward_original
             && (emitted_commit || (keyval == 0xff08 && self.holding_eaten_backspace));
@@ -569,9 +573,22 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("vntype_ibus_prop_{}.json", std::process::id()));
         let mut svc = IbusEngineService::new(tmp.clone());
 
-        // Alt+, không còn bật/tắt chế độ trong vntype-ibus mà đi thẳng qua ứng dụng
+        // Alt+, và Alt+Z không còn bật/tắt chế độ trong vntype-ibus mà đi thẳng qua ứng dụng
         assert!(!svc.process_key_event(b',' as u32, 0, crate::keymap::IBUS_MOD1_MASK));
+        assert!(!svc.process_key_event(b'z' as u32, 0, crate::keymap::IBUS_MOD1_MASK));
         assert!(svc.drain_signals().is_empty());
+
+        // Tổ hợp hệ thống (Super/Mod4+a, Ctrl+c) phải trả về false để OS/app xử lý trực tiếp
+        assert!(!svc.process_key_event(b'a' as u32, 30, crate::keymap::IBUS_MOD4_MASK));
+        assert!(svc.drain_signals().is_empty());
+
+        assert!(svc.process_key_event(b't' as u32, 20, 0));
+        let _ = svc.drain_signals();
+        assert!(!svc.process_key_event(b'c' as u32, 46, crate::keymap::IBUS_CONTROL_MASK));
+        assert_eq!(
+            svc.drain_signals(),
+            vec![IbusSignal::CommitText { text: "t".into() }, IbusSignal::HidePreeditText]
+        );
 
         svc.property_activate("vntype.im.vni", 1);
         svc.property_activate("vntype.charset.tcvn3", 1);

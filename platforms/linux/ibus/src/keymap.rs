@@ -10,12 +10,26 @@ pub const IBUS_SHIFT_MASK: u32 = 1 << 0;
 pub const IBUS_CONTROL_MASK: u32 = 1 << 2;
 /// Mặt nạ phím Alt / Mod1 (`IBUS_MOD1_MASK`).
 pub const IBUS_MOD1_MASK: u32 = 1 << 3;
+/// Mặt nạ phím Mod4 / Super trên X11/Wayland (`IBUS_MOD4_MASK`).
+pub const IBUS_MOD4_MASK: u32 = 1 << 6;
+/// Mặt nạ phím Mod5 / AltGr (`IBUS_MOD5_MASK`).
+pub const IBUS_MOD5_MASK: u32 = 1 << 7;
 /// Mặt nạ phím Super (`IBUS_SUPER_MASK`).
 pub const IBUS_SUPER_MASK: u32 = 1 << 26;
+/// Mặt nạ phím Hyper (`IBUS_HYPER_MASK`).
+pub const IBUS_HYPER_MASK: u32 = 1 << 27;
 /// Mặt nạ phím Meta (`IBUS_META_MASK`).
 pub const IBUS_META_MASK: u32 = 1 << 28;
 /// Mặt nạ đánh dấu sự kiện phím đã được engine chuyển tiếp (`IBUS_IGNORED_MASK`).
 pub const IBUS_IGNORED_MASK: u32 = 1 << 25;
+/// Tập mặt nạ các phím bổ trợ hệ thống (`Ctrl`, `Alt`, `AltGr`, `Super`, `Hyper`, `Meta`).
+pub const IBUS_SYSTEM_MODIFIER_MASK: u32 = IBUS_CONTROL_MASK
+    | IBUS_MOD1_MASK
+    | IBUS_MOD4_MASK
+    | IBUS_MOD5_MASK
+    | IBUS_SUPER_MASK
+    | IBUS_HYPER_MASK
+    | IBUS_META_MASK;
 
 /// Chuyển đổi cặp `(keyval, state)` từ giao thức IBus `ProcessKeyEvent` sang [`KeyEvent`].
 ///
@@ -26,8 +40,8 @@ pub fn translate_ibus_key(keyval: u32, state: u32) -> Option<KeyEvent> {
         return None;
     }
     let ctrl = (state & IBUS_CONTROL_MASK) != 0;
-    let alt = (state & IBUS_MOD1_MASK) != 0;
-    let meta = (state & (IBUS_SUPER_MASK | IBUS_META_MASK)) != 0;
+    let alt = (state & (IBUS_MOD1_MASK | IBUS_MOD5_MASK)) != 0;
+    let meta = (state & (IBUS_MOD4_MASK | IBUS_SUPER_MASK | IBUS_HYPER_MASK | IBUS_META_MASK)) != 0;
 
     let key = match keyval {
         0xff08 => Key::Backspace,
@@ -76,5 +90,13 @@ mod tests {
         assert_eq!(translate_ibus_key(0x0100_0111, 0), Some(KeyEvent::ch('đ')));
         assert_eq!(translate_ibus_key(b'a' as u32, IBUS_RELEASE_MASK), None);
         assert_eq!(translate_ibus_key(b'a' as u32, IBUS_IGNORED_MASK), None);
+        assert_eq!(
+            translate_ibus_key(b'l' as u32, IBUS_MOD4_MASK),
+            Some(KeyEvent { key: Key::Char('l'), ctrl: false, alt: false, meta: true })
+        );
+        assert_eq!(
+            translate_ibus_key(b'e' as u32, IBUS_MOD5_MASK),
+            Some(KeyEvent { key: Key::Char('e'), ctrl: false, alt: true, meta: false })
+        );
     }
 }
