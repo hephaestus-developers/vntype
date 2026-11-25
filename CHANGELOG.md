@@ -6,6 +6,21 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 
 ## [Unreleased]
 
+## [2026.11.2] - 2026-11-25
+
+### Fixed
+
+- **Linux (`vntype-ibus`)**: Bỏ qua sự kiện phím có cờ `IBUS_IGNORED_MASK` trong `translate_ibus_key` để tránh xử lý lặp các phím đã được chuyển tiếp, khắc phục hiện tượng nuốt dấu.
+- **Lõi (`vntype-engine`)**: Đặt lại `FieldKind::Text` trong `ImeSession::focus_changed` khi chuyển tiêu điểm để tránh kẹt trạng thái ô nhập đặc biệt (URL, mật khẩu) từ cửa sổ trước.
+
+### Changed
+
+- **Linux (`vntype-ibus`)**:
+  - Cắt cửa sổ `SetSurroundingText` tối đa 128 ký tự trước con trỏ khi xử lý và ghi log.
+  - Bỏ phát tín hiệu `RegisterProperties` lặp lại trong `FocusIn` (chỉ đăng ký menu khi `Enable`) để giảm lag khi chuyển focus.
+  - Theo dõi `preedit_visible` để không phát `HidePreeditText` thừa khi xóa từ đã adopt bằng `Backspace` hoặc trong các đợt `Reset`.
+  - Áp dụng debounce 2 giây cho `reload_config_if_needed` khi `FocusIn` và tối ưu macro `debug_log!` (không cấp phát chuỗi ở bản release, giữ sẵn file handle ở bản debug).
+
 ## [2026.11.1] - 2026-11-24
 
 ### Added
@@ -43,6 +58,7 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 - Chuyển giao diện cài đặt Windows từ `eframe` sang Win32 API thuần siêu nhẹ.
 - Áp dụng quy tắc phiên bản `{year}.{month}.{number}` bắt đầu từ `2026.11.0`.
 
-[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.1...HEAD
+[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.2...HEAD
+[2026.11.2]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.1...v2026.11.2
 [2026.11.1]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.0...v2026.11.1
 [2026.11.0]: https://github.com/hephaestus-developers/vntype/releases/tag/v2026.11.0
