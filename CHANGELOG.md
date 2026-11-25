@@ -6,6 +6,21 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 
 ## [Unreleased]
 
+## [2026.11.3] - 2026-11-25
+
+### Fixed
+
+- **Linux (`vntype-ibus`)**:
+  - Bổ sung nhận diện `IBUS_MOD4_MASK` (`Super`/Windows), `IBUS_MOD5_MASK` (`AltGr`) và `IBUS_HYPER_MASK` trong `translate_ibus_key` để không ăn nhầm tổ hợp phím hệ thống như đang gõ chữ.
+  - Không dùng `ForwardKeyEvent` + `handled = true` cho tổ hợp có modifier hệ thống (`Ctrl`, `Alt`, `Super`, `Hyper`, `Meta`) khi đang có preedit; vẫn `CommitText` + `HidePreeditText` rồi trả `handled = false` để sự kiện phím thật đi thẳng qua compositor/ứng dụng.
+  - Bỏ chặn `Alt+Z` trong `vntype-ibus` (tương tự `Alt+,`) để nhường phím tắt cho ứng dụng và hệ thống.
+
+### Added
+
+- **Tài liệu & Quy trình GitHub**:
+  - Bổ sung bộ tài liệu đầy đủ trong `docs/` (`OVERVIEW.md`, `ARCHITECTURE.md`, `CORE_ENGINE.md`, `ADAPTER_AND_FFI.md`, `TESTING_AND_DEBUGGING.md`, `RELEASE.md`, `TROUBLESHOOTING.md`, `adr/0001..0004`, và `platforms/{linux,windows,macos}.md`).
+  - Bổ sung mẫu Issue/PR, `dependabot.yml`, `release.yml`, `SECURITY.md`, `CONTRIBUTING.md` và `CODE_OF_CONDUCT.md` trong `.github/`.
+
 ## [2026.11.2] - 2026-11-25
 
 ### Fixed
@@ -58,7 +73,8 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 - Chuyển giao diện cài đặt Windows từ `eframe` sang Win32 API thuần siêu nhẹ.
 - Áp dụng quy tắc phiên bản `{year}.{month}.{number}` bắt đầu từ `2026.11.0`.
 
-[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.2...HEAD
+[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.3...HEAD
+[2026.11.3]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.2...v2026.11.3
 [2026.11.2]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.1...v2026.11.2
 [2026.11.1]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.0...v2026.11.1
 [2026.11.0]: https://github.com/hephaestus-developers/vntype/releases/tag/v2026.11.0
