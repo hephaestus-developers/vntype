@@ -6,6 +6,13 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 
 ## [Unreleased]
 
+## [2026.11.4] - 2026-11-26
+
+### Fixed
+
+- **Linux (`vntype-ibus`)**: Bỏ qua các sự kiện `SetSurroundingText` trễ bị thiếu ký tự phân tách (dấu cách, dấu câu) ngay sau `CommitText` / `ReplaceText`, khắc phục lỗi `adopt_previous_word` nạp nhầm từ trước đó và làm hỏng chữ khi gõ liên tiếp.
+- **Linux (`vntype-fcitx5`, `package-deb.sh`)**: Truyền `-DVNTYPE_STATIC_LIB` theo đúng profile (`debug`/`release`) khi đóng gói `.deb`, và tự động chọn `target/debug` trong `CMakeLists.txt` khi `CMAKE_BUILD_TYPE=Debug`.
+
 ## [2026.11.3] - 2026-11-25
 
 ### Fixed
@@ -73,7 +80,8 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 - Chuyển giao diện cài đặt Windows từ `eframe` sang Win32 API thuần siêu nhẹ.
 - Áp dụng quy tắc phiên bản `{year}.{month}.{number}` bắt đầu từ `2026.11.0`.
 
-[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.3...HEAD
+[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.4...HEAD
+[2026.11.4]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.3...v2026.11.4
 [2026.11.3]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.2...v2026.11.3
 [2026.11.2]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.1...v2026.11.2
 [2026.11.1]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.0...v2026.11.1
