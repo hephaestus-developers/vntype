@@ -103,6 +103,7 @@ pub struct IbusEngineService {
     signals: Vec<IbusSignal>,
     holding_eaten_backspace: bool,
     preedit_visible: bool,
+    pending_commit_suffix: Option<String>,
 }
 
 fn merge_config_macros(base: &Config, file_macros: &HashMap<String, String>) -> Config {
@@ -135,6 +136,7 @@ impl IbusEngineService {
             signals: Vec::new(),
             holding_eaten_backspace: false,
             preedit_visible: false,
+            pending_commit_suffix: None,
         }
     }
 
@@ -161,6 +163,9 @@ impl IbusEngineService {
             return false;
         }
         self.reload_config_if_needed(false);
+        if keyval == 0xff08 {
+            self.pending_commit_suffix = None;
+        }
         let effects = self.controller.process_key(ev.clone(), keyval);
         let handled = self.apply_effects(effects, keyval, keycode, state);
         if keyval == 0xff08 {
@@ -185,14 +190,36 @@ impl IbusEngineService {
             return;
         }
         if cursor_chars != anchor_chars {
+            self.pending_commit_suffix = None;
             debug_log!("SET_SURROUNDING selection cursor={cursor_chars} anchor={anchor_chars}");
             self.controller.set_surrounding_utf16(Some(""), 0, 1);
             return;
         }
         let Some((clean, c_chars)) = window_and_strip_surrounding(text, cursor_chars) else {
+            self.pending_commit_suffix = None;
             self.controller.set_surrounding_utf16(None, 0, 0);
             return;
         };
+        if let Some(suffix) = self.pending_commit_suffix.take() {
+            let before_end =
+                clean.char_indices().nth(c_chars as usize).map(|(i, _)| i).unwrap_or(clean.len());
+            let before = &clean[..before_end];
+            if !before.ends_with(&suffix) {
+                let mut chars = suffix.chars();
+                let last = chars.next_back();
+                let without_last = chars.as_str();
+                if last.is_some_and(|c| !c.is_alphanumeric())
+                    && !without_last.is_empty()
+                    && before.ends_with(without_last)
+                {
+                    self.pending_commit_suffix = Some(suffix);
+                    debug_log!(
+                        "SET_SURROUNDING ignored stale pre-commit snapshot window={clean:?} cursor={c_chars}"
+                    );
+                    return;
+                }
+            }
+        }
         debug_log!("SET_SURROUNDING raw_bytes={} window={clean:?} cursor={c_chars}", text.len());
         let Some(c_u16) = char_to_utf16_offset(&clean, c_chars) else {
             self.controller.set_surrounding_utf16(None, 0, 0);
@@ -335,6 +362,7 @@ impl IbusEngineService {
     pub fn focus_in(&mut self, app_id: Option<&str>) {
         debug_log!("FOCUS_IN app_id={app_id:?}");
         self.holding_eaten_backspace = false;
+        self.pending_commit_suffix = None;
         self.reload_config_if_needed(false);
         let effects = self.controller.focus_changed(app_id);
         self.apply_effects(effects, 0, 0, 0);
@@ -344,6 +372,7 @@ impl IbusEngineService {
     pub fn focus_out(&mut self) {
         debug_log!("FOCUS_OUT");
         self.holding_eaten_backspace = false;
+        self.pending_commit_suffix = None;
         let effects = self.controller.flush();
         self.apply_effects(effects, 0, 0, 0);
     }
@@ -354,6 +383,7 @@ impl IbusEngineService {
     /// từ đã chốt (`is_adopted()`), ta chỉ ẩn vùng gạch chân mà không xoá trạng thái từ đó.
     pub fn reset(&mut self) {
         debug_log!("RESET adopted={}", self.controller.session().is_adopted());
+        self.pending_commit_suffix = None;
         if !self.controller.session().is_adopted() {
             self.controller.reset();
         }
@@ -370,6 +400,7 @@ impl IbusEngineService {
             match eff {
                 Effect::SetPreedit { text, cursor_utf16, .. } => {
                     self.preedit_visible = true;
+                    self.pending_commit_suffix = None;
                     self.signals.push(IbusSignal::UpdatePreeditText { text, cursor_utf16, visible: true });
                 }
                 Effect::ClearPreedit => {
@@ -380,6 +411,7 @@ impl IbusEngineService {
                 }
                 Effect::CommitText { text } => {
                     emitted_commit = true;
+                    self.pending_commit_suffix = Self::track_commit_suffix(&text);
                     self.signals.push(IbusSignal::CommitText { text });
                 }
                 Effect::ReplaceText { delete_chars, insert, .. } => {
@@ -391,12 +423,16 @@ impl IbusEngineService {
                         });
                     }
                     if !insert.is_empty() {
+                        self.pending_commit_suffix = Self::track_commit_suffix(&insert);
                         self.signals.push(IbusSignal::CommitText { text: insert });
+                    } else {
+                        self.pending_commit_suffix = None;
                     }
                 }
                 Effect::WaitMs { .. } => {}
                 Effect::ForwardKey { raw_keycode } => {
                     let _ = raw_keycode;
+                    self.pending_commit_suffix = None;
                     forward_original = true;
                 }
             }
@@ -417,6 +453,12 @@ impl IbusEngineService {
             return true;
         }
         !forward_original
+    }
+
+    fn track_commit_suffix(text: &str) -> Option<String> {
+        let mut chars = text.chars();
+        let last = chars.next_back()?;
+        if !last.is_alphanumeric() && !chars.as_str().is_empty() { Some(text.to_string()) } else { None }
     }
 
     fn reload_config_if_needed(&mut self, force: bool) {
@@ -692,5 +734,26 @@ mod tests {
         assert!(svc.process_key_event(b's' as u32, 0, 0));
         let sigs3 = svc.drain_signals();
         assert!(sigs3.iter().any(|s| matches!(s, IbusSignal::CommitText { text } if text == "ếng")));
+    }
+
+    #[test]
+    fn set_surrounding_ignores_stale_echo_missing_committed_space() {
+        let mut svc = IbusEngineService::new(PathBuf::from("/nonexistent/config.json"));
+        for b in b"Taij " {
+            assert!(svc.process_key_event(*b as u32, 0, 0));
+        }
+        let sigs1 = svc.drain_signals();
+        assert!(sigs1.iter().any(|s| matches!(s, IbusSignal::CommitText { text } if text == "Tại ")));
+
+        // Client phát SetSurroundingText trễ (thiếu dấu cách vừa commit và còn kèm ZWSP)
+        svc.set_surrounding_text("Tại\u{200b}", 3, 3);
+
+        for b in b"sao " {
+            assert!(svc.process_key_event(*b as u32, 0, 0));
+        }
+        let sigs2 = svc.drain_signals();
+        assert!(!svc.controller.session().is_adopted());
+        assert!(!sigs2.iter().any(|s| matches!(s, IbusSignal::DeleteSurroundingText { .. })));
+        assert!(sigs2.iter().any(|s| matches!(s, IbusSignal::CommitText { text } if text == "sao ")));
     }
 }
