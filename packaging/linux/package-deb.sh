@@ -61,7 +61,8 @@ FCITX_BUILD="$STAGE_DIR/fcitx5-build"
 cmake -B "$FCITX_BUILD" -S "$ROOT_DIR/platforms/linux/fcitx5" \
     -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
     -DCMAKE_INSTALL_PREFIX=/usr \
-    -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH"
+    -DCMAKE_INSTALL_LIBDIR="lib/$MULTIARCH" \
+    -DVNTYPE_STATIC_LIB="$ROOT_DIR/target/$PROFILE/libvntype_ffi.a"
 cmake --build "$FCITX_BUILD" -j"$(nproc)"
 
 mkdir -p "$OUT_DIR"

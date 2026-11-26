@@ -12,7 +12,12 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 option(VNTYPE_FCITX5_TEST_ONLY "Chỉ biên dịch bộ kiểm thử C ABI (không cần header Fcitx5)" OFF)
 
 if(NOT VNTYPE_STATIC_LIB)
-    set(VNTYPE_STATIC_LIB "${CMAKE_CURRENT_SOURCE_DIR}/../../../target/release/libvntype_ffi.a")
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(_vntype_cargo_profile "debug")
+    else()
+        set(_vntype_cargo_profile "release")
+    endif()
+    set(VNTYPE_STATIC_LIB "${CMAKE_CURRENT_SOURCE_DIR}/../../../target/${_vntype_cargo_profile}/libvntype_ffi.a")
 endif()
 
 if(NOT VNTYPE_FCITX5_TEST_ONLY)
