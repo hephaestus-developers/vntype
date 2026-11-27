@@ -62,7 +62,10 @@ done
 if [[ "$UNINSTALL" -eq 1 ]]; then
     echo "Uninstalling VNType from $PREFIX..."
     rm -f "$PREFIX/bin/vntype-cli" \
+          "$PREFIX/bin/vntype-linux-settings" \
           "$PREFIX/libexec/vntype-ibus" \
+          "$PREFIX/share/applications/dev.hephaestus.vntype.settings.desktop" \
+          "$PREFIX/share/icons/hicolor/scalable/apps/vntype.svg" \
           "$PREFIX/share/ibus/component/vntype.xml" \
           "$PREFIX/share/fcitx5/addon/vntype.conf" \
           "$PREFIX/share/fcitx5/inputmethod/vntype.conf"
@@ -77,7 +80,7 @@ if [[ "$OFFLINE" == "1" ]]; then
 fi
 
 PACKAGES=(-p vntype-cli)
-[[ "$WITH_IBUS" -eq 1 ]] && PACKAGES+=(-p vntype-ibus)
+[[ "$WITH_IBUS" -eq 1 ]] && PACKAGES+=(-p vntype-ibus -p vntype-linux-settings)
 
 echo "Building Rust workspace packages: ${PACKAGES[*]}"
 cargo build "${CARGO_FLAGS[@]}" "${PACKAGES[@]}" --manifest-path "$ROOT_DIR/Cargo.toml"
@@ -86,10 +89,14 @@ echo "Installing common binaries to $PREFIX/bin..."
 install -Dm755 "$ROOT_DIR/target/release/vntype-cli" "$PREFIX/bin/vntype-cli"
 
 if [[ "$WITH_IBUS" -eq 1 ]]; then
-    echo "Installing vntype-ibus..."
+    echo "Installing vntype-ibus and vntype-linux-settings..."
     install -Dm755 "$ROOT_DIR/target/release/vntype-ibus" "$PREFIX/libexec/vntype-ibus"
+    install -Dm755 "$ROOT_DIR/target/release/vntype-linux-settings" "$PREFIX/bin/vntype-linux-settings"
+    install -Dm644 "$ROOT_DIR/platforms/linux/settings/data/dev.hephaestus.vntype.settings.desktop" "$PREFIX/share/applications/dev.hephaestus.vntype.settings.desktop"
+    install -Dm644 "$ROOT_DIR/docs/assets/logo.svg" "$PREFIX/share/icons/hicolor/scalable/apps/vntype.svg"
     mkdir -p "$PREFIX/share/ibus/component"
-    sed "s|@LIBEXECDIR@|$PREFIX/libexec|g" \
+    VERSION="$(awk -F'"' '/^version =/{print $2; exit}' "$ROOT_DIR/Cargo.toml")"
+    sed -e "s|@LIBEXECDIR@|$PREFIX/libexec|g" -e "s|@BINDIR@|$PREFIX/bin|g" -e "s|@VERSION@|$VERSION|g" \
         "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \
         > "$PREFIX/share/ibus/component/vntype.xml"
 fi

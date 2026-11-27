@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, mpsc};
 
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ use zbus::object_server::SignalEmitter;
 use zbus::{OwnedObjectPath, OwnedVariant, Structure, Type, Variant};
 
 use crate::dbus_service::{IbusEngineService, IbusSignal};
+use crate::keymap::{IBUS_HANDLED_MASK, IBUS_IGNORED_MASK, IBUS_RELEASE_MASK};
 
 /// Biểu diễn `IBusText` theo wire format D-Bus của IBus (`(sa{sv}sv)`).
 #[derive(Debug, Clone, Type, Serialize, Deserialize)]
@@ -87,67 +88,123 @@ impl IbusText {
 }
 
 enum EngineCmd {
-    ProcessKey { keyval: u32, keycode: u32, state: u32, reply: mpsc::SyncSender<(bool, Vec<IbusSignal>)> },
-    FocusIn { app: Option<String>, reply: mpsc::SyncSender<Vec<IbusSignal>> },
-    FocusOut { reply: mpsc::SyncSender<Vec<IbusSignal>> },
-    Reset { reply: mpsc::SyncSender<Vec<IbusSignal>> },
-    Enable { reply: mpsc::SyncSender<Vec<IbusSignal>> },
-    PropertyActivate { name: String, state: u32, reply: mpsc::SyncSender<Vec<IbusSignal>> },
+    ProcessKey { keyval: u32, keycode: u32, state: u32 },
+    FocusIn { app: Option<String> },
+    FocusOut,
+    Reset,
+    Enable,
+    Disable,
+    PropertyActivate { name: String, state: u32 },
     SetSurrounding { text: String, cursor: u32, anchor: u32 },
-    SetContentType { purpose: u32, hints: u32, reply: mpsc::SyncSender<Vec<IbusSignal>> },
+    SetContentType { purpose: u32, hints: u32 },
+    SetCapabilities { caps: u32 },
 }
 
-fn spawn_engine_actor(config_path: PathBuf) -> Mutex<mpsc::Sender<EngineCmd>> {
-    let (tx, rx) = mpsc::channel::<EngineCmd>();
+enum EngineReply {
+    Key(bool, Vec<IbusSignal>),
+    Signals(Vec<IbusSignal>),
+}
+
+struct ActorHandle {
+    cmd_tx: mpsc::Sender<EngineCmd>,
+    reply_rx: mpsc::Receiver<EngineReply>,
+}
+
+fn spawn_engine_actor(config_path: PathBuf) -> Mutex<Option<ActorHandle>> {
+    let (cmd_tx, cmd_rx) = mpsc::channel::<EngineCmd>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel::<EngineReply>(1);
     std::thread::spawn(move || {
         let mut svc = IbusEngineService::new(config_path);
-        while let Ok(cmd) = rx.recv() {
+        while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
-                EngineCmd::ProcessKey { keyval, keycode, state, reply } => {
+                EngineCmd::ProcessKey { keyval, keycode, state } => {
                     let handled = svc.process_key_event(keyval, keycode, state);
-                    let _ = reply.send((handled, svc.drain_signals()));
+                    let _ = reply_tx.send(EngineReply::Key(handled, svc.drain_signals()));
                 }
-                EngineCmd::FocusIn { app, reply } => {
+                EngineCmd::FocusIn { app } => {
                     svc.focus_in(app.as_deref());
-                    let _ = reply.send(svc.drain_signals());
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
                 }
-                EngineCmd::FocusOut { reply } => {
+                EngineCmd::FocusOut => {
                     svc.focus_out();
-                    let _ = reply.send(svc.drain_signals());
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
                 }
-                EngineCmd::Reset { reply } => {
+                EngineCmd::Reset => {
                     svc.reset();
-                    let _ = reply.send(svc.drain_signals());
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
                 }
-                EngineCmd::Enable { reply } => {
+                EngineCmd::Enable => {
                     svc.emit_register_menu();
-                    let _ = reply.send(svc.drain_signals());
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
                 }
-                EngineCmd::PropertyActivate { name, state, reply } => {
+                EngineCmd::Disable => {
+                    svc.disable();
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
+                }
+                EngineCmd::PropertyActivate { name, state } => {
                     svc.property_activate(&name, state);
-                    let _ = reply.send(svc.drain_signals());
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
                 }
                 EngineCmd::SetSurrounding { text, cursor, anchor } => {
                     svc.set_surrounding_text(&text, cursor, anchor);
                 }
-                EngineCmd::SetContentType { purpose, hints, reply } => {
+                EngineCmd::SetContentType { purpose, hints } => {
                     svc.set_content_type(purpose, hints);
-                    let _ = reply.send(svc.drain_signals());
+                    let _ = reply_tx.send(EngineReply::Signals(svc.drain_signals()));
+                }
+                EngineCmd::SetCapabilities { caps } => {
+                    svc.set_capabilities(caps);
                 }
             }
         }
     });
-    Mutex::new(tx)
+    Mutex::new(Some(ActorHandle { cmd_tx, reply_rx }))
 }
 
 struct DbusEngine {
-    tx: Mutex<mpsc::Sender<EngineCmd>>,
+    actor: Mutex<Option<ActorHandle>>,
+    path: OwnedObjectPath,
+    supports_surrounding: AtomicBool,
 }
 
 impl DbusEngine {
-    fn send_cmd(&self, cmd: EngineCmd) -> zbus::fdo::Result<()> {
-        let tx = self.tx.lock().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        tx.send(cmd).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    fn send_fire_and_forget(&self, cmd: EngineCmd) -> zbus::fdo::Result<()> {
+        let guard = self.actor.lock().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let Some(handle) = guard.as_ref() else {
+            return Err(zbus::fdo::Error::Failed("Engine đã bị huỷ".into()));
+        };
+        handle.cmd_tx.send(cmd).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    fn call_key(
+        &self,
+        keyval: u32,
+        keycode: u32,
+        state: u32,
+    ) -> zbus::fdo::Result<(bool, Vec<IbusSignal>)> {
+        let guard = self.actor.lock().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let Some(handle) = guard.as_ref() else {
+            return Err(zbus::fdo::Error::Failed("Engine đã bị huỷ".into()));
+        };
+        handle
+            .cmd_tx
+            .send(EngineCmd::ProcessKey { keyval, keycode, state })
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        match handle.reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))? {
+            EngineReply::Key(handled, signals) => Ok((handled, signals)),
+            EngineReply::Signals(signals) => Ok((false, signals)),
+        }
+    }
+
+    fn call_signals(&self, cmd: EngineCmd) -> zbus::fdo::Result<Vec<IbusSignal>> {
+        let guard = self.actor.lock().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        let Some(handle) = guard.as_ref() else {
+            return Err(zbus::fdo::Error::Failed("Engine đã bị huỷ".into()));
+        };
+        handle.cmd_tx.send(cmd).map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
+        match handle.reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))? {
+            EngineReply::Signals(signals) | EngineReply::Key(_, signals) => Ok(signals),
+        }
     }
 }
 
@@ -160,19 +217,27 @@ impl DbusEngine {
         keycode: u32,
         state: u32,
     ) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::ProcessKey { keyval, keycode, state, reply: reply_tx })?;
-        let (handled, signals) = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await?;
+        if (state & (IBUS_HANDLED_MASK | IBUS_IGNORED_MASK)) != 0 {
+            return Ok(false);
+        }
+        if (state & IBUS_RELEASE_MASK) != 0 && keyval != 0xff08 {
+            return Ok(false);
+        }
+        let (handled, signals) = self.call_key(keyval, keycode, state)?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
         Ok(handled)
     }
 
     async fn focus_in(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::FocusIn { app: None, reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await?;
-        let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        let signals = self.call_signals(EngineCmd::FocusIn { app: None })?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        if self.supports_surrounding.load(Ordering::Relaxed) {
+            let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        }
         Ok(())
     }
 
@@ -182,19 +247,22 @@ impl DbusEngine {
         _object_path: &str,
         client: &str,
     ) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::FocusIn { app: Some(client.to_string()), reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await?;
-        let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        let signals = self.call_signals(EngineCmd::FocusIn { app: Some(client.to_string()) })?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        if self.supports_surrounding.load(Ordering::Relaxed) {
+            let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        }
         Ok(())
     }
 
     async fn focus_out(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::FocusOut { reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await
+        let signals = self.call_signals(EngineCmd::FocusOut)?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        Ok(())
     }
 
     async fn focus_out_id(
@@ -206,24 +274,37 @@ impl DbusEngine {
     }
 
     async fn reset(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::Reset { reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await
-    }
-
-    async fn enable(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::Enable { reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await?;
-        let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        let signals = self.call_signals(EngineCmd::Reset)?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
         Ok(())
     }
 
-    fn disable(&self) {}
+    async fn enable(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
+        let signals = self.call_signals(EngineCmd::Enable)?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        if self.supports_surrounding.load(Ordering::Relaxed) {
+            let _ = DbusEngine::require_surrounding_text(&emitter).await;
+        }
+        Ok(())
+    }
 
-    fn set_capabilities(&self, _caps: u32) {}
+    async fn disable(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> zbus::fdo::Result<()> {
+        let signals = self.call_signals(EngineCmd::Disable)?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        Ok(())
+    }
+
+    fn set_capabilities(&self, caps: u32) {
+        const IBUS_CAP_SURROUNDING_TEXT: u32 = 1 << 5;
+        self.supports_surrounding.store((caps & IBUS_CAP_SURROUNDING_TEXT) != 0, Ordering::Relaxed);
+        let _ = self.send_fire_and_forget(EngineCmd::SetCapabilities { caps });
+    }
 
     fn set_cursor_location(&self, _x: i32, _y: i32, _w: i32, _h: i32) {}
 
@@ -235,15 +316,19 @@ impl DbusEngine {
         name: &str,
         state: u32,
     ) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::PropertyActivate { name: name.to_string(), state, reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await
+        let signals = self.call_signals(EngineCmd::PropertyActivate { name: name.to_string(), state })?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        Ok(())
     }
 
     fn set_surrounding_text(&self, text: OwnedVariant, cursor_pos: u32, anchor_pos: u32) {
+        if !self.supports_surrounding.load(Ordering::Relaxed) {
+            return;
+        }
         if let Some(s) = IbusText::extract_text(&text) {
-            let _ = self.send_cmd(EngineCmd::SetSurrounding {
+            let _ = self.send_fire_and_forget(EngineCmd::SetSurrounding {
                 text: s,
                 cursor: cursor_pos,
                 anchor: anchor_pos,
@@ -257,13 +342,19 @@ impl DbusEngine {
         purpose: u32,
         hints: u32,
     ) -> zbus::fdo::Result<()> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.send_cmd(EngineCmd::SetContentType { purpose, hints, reply: reply_tx })?;
-        let signals = reply_rx.recv().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        emit_signals(&emitter, signals).await
+        let signals = self.call_signals(EngineCmd::SetContentType { purpose, hints })?;
+        if !signals.is_empty() {
+            emit_signals(&emitter, signals).await?;
+        }
+        Ok(())
     }
 
-    fn destroy(&self) {}
+    async fn destroy(&self, #[zbus(connection)] conn: &zbus::Connection) {
+        if let Ok(mut guard) = self.actor.lock() {
+            guard.take();
+        }
+        let _ = conn.object_server().remove::<DbusEngine, _>(&self.path).await;
+    }
 
     #[zbus(signal)]
     async fn update_preedit_text(
@@ -566,11 +657,21 @@ async fn emit_signals(emitter: &SignalEmitter<'_>, signals: Vec<IbusSignal>) -> 
                     IbusText::with_underline(text).into_variant(),
                     cursor_chars,
                     visible,
-                    0, // IBUS_ENGINE_PREEDIT_CLEAR
+                    1, // IBUS_ENGINE_PREEDIT_COMMIT
                 )
                 .await
             }
-            IbusSignal::HidePreeditText => DbusEngine::hide_preedit_text(emitter).await,
+            IbusSignal::HidePreeditText => {
+                DbusEngine::update_preedit_text(
+                    emitter,
+                    IbusText::new("").into_variant(),
+                    0,
+                    false,
+                    0, // IBUS_ENGINE_PREEDIT_CLEAR — xoá sạch bộ đệm preedit lưu trên ibus-daemon
+                )
+                .await?;
+                DbusEngine::hide_preedit_text(emitter).await
+            }
             IbusSignal::CommitText { text } => {
                 DbusEngine::commit_text(emitter, IbusText::new(text).into_variant()).await
             }
@@ -621,7 +722,11 @@ impl DbusFactory {
         let path_str = format!("/org/freedesktop/IBus/Engine/{id}");
         let path = OwnedObjectPath::try_from(path_str.as_str())
             .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        let engine = DbusEngine { tx: spawn_engine_actor(self.config_path.clone()) };
+        let engine = DbusEngine {
+            actor: spawn_engine_actor(self.config_path.clone()),
+            path: path.clone(),
+            supports_surrounding: AtomicBool::new(true),
+        };
         conn.object_server()
             .at(&path, engine)
             .await
@@ -670,21 +775,37 @@ fn block_on<F: std::future::Future>(fut: F) -> F::Output {
 }
 
 /// Khởi chạy trình nền `org.freedesktop.IBus.VNType` kết nối D-Bus thật tới IBus Daemon.
+///
+/// Tự động thoát sạch khi mất kết nối D-Bus (ví dụ lúc `ibus restart` hoặc kết thúc phiên).
 pub fn run_ibus_daemon(config_path: PathBuf) -> Result<(), String> {
     let addr = resolve_ibus_address()?;
     let factory = DbusFactory { config_path, next_id: AtomicU64::new(1) };
-    let _conn = block_on(async {
-        zbus::connection::Builder::address(addr.as_str())
+    block_on(async {
+        let conn = zbus::connection::Builder::address(addr.as_str())
             .name("org.freedesktop.IBus.VNType")
             .serve_at("/org/freedesktop/IBus/Factory", factory)
             .build()
             .await
-            .map_err(|e| format!("Không thể kết nối IBus D-Bus: {e}"))
-    })?;
+            .map_err(|e| format!("Không thể kết nối IBus D-Bus: {e}"))?;
 
-    loop {
-        std::thread::park();
-    }
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            if conn
+                .call_method(
+                    Some("org.freedesktop.DBus"),
+                    "/org/freedesktop/DBus",
+                    Some("org.freedesktop.DBus"),
+                    "GetId",
+                    &(),
+                )
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]

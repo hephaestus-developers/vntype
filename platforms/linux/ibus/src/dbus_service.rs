@@ -104,6 +104,8 @@ pub struct IbusEngineService {
     holding_eaten_backspace: bool,
     preedit_visible: bool,
     pending_commit_suffix: Option<String>,
+    supports_preedit: bool,
+    supports_surrounding: bool,
 }
 
 fn merge_config_macros(base: &Config, file_macros: &HashMap<String, String>) -> Config {
@@ -137,6 +139,8 @@ impl IbusEngineService {
             holding_eaten_backspace: false,
             preedit_visible: false,
             pending_commit_suffix: None,
+            supports_preedit: true,
+            supports_surrounding: true,
         }
     }
 
@@ -157,9 +161,14 @@ impl IbusEngineService {
             return false;
         };
         // Trên Linux/IBus việc chuyển bộ gõ do desktop/IBus đảm nhận;
-        // không chặn Alt+, hoặc Alt+Z của ứng dụng/hệ thống.
+        // không chặn Alt+, hoặc Alt+Z của ứng dụng/hệ thống, nhưng vẫn chốt preedit đang mở nếu có.
         if ev.alt && !ev.ctrl && !ev.meta && matches!(ev.key, Key::Char(',' | 'z' | 'Z')) {
             self.holding_eaten_backspace = false;
+            self.pending_commit_suffix = None;
+            if self.controller.has_display_text() {
+                let effects = self.controller.flush();
+                self.apply_effects(effects, 0, 0, 0);
+            }
             return false;
         }
         self.reload_config_if_needed(false);
@@ -168,7 +177,7 @@ impl IbusEngineService {
         }
         let effects = self.controller.process_key(ev.clone(), keyval);
         let handled = self.apply_effects(effects, keyval, keycode, state);
-        if keyval == 0xff08 {
+        if keyval == 0xff08 && (state & IBUS_SYSTEM_MODIFIER_MASK) == 0 {
             if handled {
                 self.holding_eaten_backspace = true;
             }
@@ -186,7 +195,7 @@ impl IbusEngineService {
 
     /// Xử lý tín hiệu `SetSurroundingText(text, cursor_chars, anchor_chars)` từ IBus.
     pub fn set_surrounding_text(&mut self, text: &str, cursor_chars: u32, anchor_chars: u32) {
-        if !self.controller.display_text().is_empty() {
+        if !self.supports_surrounding || self.controller.has_display_text() {
             return;
         }
         if cursor_chars != anchor_chars {
@@ -238,8 +247,46 @@ impl IbusEngineService {
             _ => FieldKind::Text,
         };
         debug_log!("SET_CONTENT_TYPE purpose={purpose} -> {kind:?}");
+        self.holding_eaten_backspace = false;
+        self.pending_commit_suffix = None;
         let effects = self.controller.set_field_kind(kind);
         self.apply_effects(effects, 0, 0, 0);
+    }
+
+    /// Cập nhật khả năng của ứng dụng đích từ `SetCapabilities(caps)`
+    /// (`IBUS_CAP_PREEDIT_TEXT = 1 << 0`, `IBUS_CAP_SURROUNDING_TEXT = 1 << 5`).
+    pub fn set_capabilities(&mut self, caps: u32) {
+        const IBUS_CAP_PREEDIT_TEXT: u32 = 1 << 0;
+        const IBUS_CAP_SURROUNDING_TEXT: u32 = 1 << 5;
+        self.supports_surrounding = (caps & IBUS_CAP_SURROUNDING_TEXT) != 0;
+        // Chỉ chuyển sang OutputMode::Replace khi client tắt inline preedit NHƯNG hỗ trợ surrounding text;
+        // nếu thiếu cả hai, giữ OutputMode::Preedit để ibus-daemon hiển thị cửa sổ preedit nổi.
+        let use_preedit = caps == 0 || (caps & IBUS_CAP_PREEDIT_TEXT) != 0 || !self.supports_surrounding;
+        debug_log!(
+            "SET_CAPABILITIES caps={caps:#x} use_preedit={use_preedit} surrounding={}",
+            self.supports_surrounding
+        );
+        if use_preedit != self.supports_preedit {
+            self.supports_preedit = use_preedit;
+            let mode = if use_preedit { OutputMode::Preedit } else { OutputMode::Replace };
+            self.controller.set_allow_unverified_replace(!use_preedit);
+            let effects = self.controller.set_output_mode(mode);
+            self.apply_effects(effects, 0, 0, 0);
+        }
+        if !self.supports_surrounding {
+            self.pending_commit_suffix = None;
+            self.controller.set_surrounding_utf16(None, 0, 0);
+        }
+    }
+
+    /// Trả về `true` nếu ứng dụng đích hiện tại hỗ trợ đọc/xoá surrounding text.
+    pub fn supports_surrounding(&self) -> bool {
+        self.supports_surrounding
+    }
+
+    /// Trả về `true` nếu ứng dụng đích hiện tại hỗ trợ hiển thị preedit.
+    pub fn supports_preedit(&self) -> bool {
+        self.supports_preedit
     }
 
     /// Trả về kiểu gõ hiện tại đang cấu hình trong engine.
@@ -369,8 +416,25 @@ impl IbusEngineService {
     }
 
     /// Xử lý sự kiện mất tiêu điểm `FocusOut()`.
+    ///
+    /// Do `UpdatePreeditText` dùng chế độ `IBUS_ENGINE_PREEDIT_COMMIT`, phía ứng dụng sẽ tự chốt
+    /// chuỗi gạch chân khi mất tiêu điểm; ta chỉ reset bộ đệm nội bộ để tránh nhân đôi chữ.
     pub fn focus_out(&mut self) {
-        debug_log!("FOCUS_OUT");
+        debug_log!("FOCUS_OUT preedit_visible={}", self.preedit_visible);
+        self.holding_eaten_backspace = false;
+        self.pending_commit_suffix = None;
+        if self.preedit_visible {
+            self.preedit_visible = false;
+            self.controller.reset();
+        } else {
+            let effects = self.controller.flush();
+            self.apply_effects(effects, 0, 0, 0);
+        }
+    }
+
+    /// Xử lý sự kiện tắt bộ gõ `Disable()` từ IBus.
+    pub fn disable(&mut self) {
+        debug_log!("DISABLE");
         self.holding_eaten_backspace = false;
         self.pending_commit_suffix = None;
         let effects = self.controller.flush();
@@ -462,7 +526,7 @@ impl IbusEngineService {
     }
 
     fn reload_config_if_needed(&mut self, force: bool) {
-        if !self.controller.display_text().is_empty() {
+        if self.controller.has_display_text() {
             return;
         }
         let now = Instant::now();
@@ -476,11 +540,13 @@ impl IbusEngineService {
         let cfg_mtime = std::fs::metadata(&self.config_path).and_then(|m| m.modified()).ok();
         let mac_mtime = std::fs::metadata(&self.macros_path).and_then(|m| m.modified()).ok();
         let mut dirty = false;
+        let mut cfg_changed = false;
 
         if cfg_mtime != self.config_mtime {
             self.config_mtime = cfg_mtime;
             self.base_config = load_config_or_default(&self.config_path);
             dirty = true;
+            cfg_changed = true;
         }
         if mac_mtime != self.macros_mtime {
             self.macros_mtime = mac_mtime;
@@ -492,6 +558,9 @@ impl IbusEngineService {
             let merged = merge_config_macros(&self.base_config, &self.file_macros);
             let effects = self.controller.apply_config(merged);
             self.apply_effects(effects, 0, 0, 0);
+            if cfg_changed {
+                self.emit_register_menu();
+            }
         }
     }
 }
@@ -566,12 +635,26 @@ mod tests {
         assert!(svc.drain_signals().is_empty());
         assert!(svc.controller.session().is_adopted());
 
-        // Khi Backspace xoá từ đã adopt, chỉ phát DeleteSurroundingText mà không phát HidePreeditText thừa
-        assert!(svc.process_key_event(0xff08, 14, 0));
+        // Khi Backspace xoá 1 ký tự cuối trên từ đã adopt ("tiếng" -> "tiến"), cho phép PassThrough (handled=false)
+        // để app tự xoá ở tốc độ gốc mà vẫn theo dõi ngầm trạng thái adopted
+        assert!(!svc.process_key_event(0xff08, 14, 0));
+        assert!(svc.drain_signals().is_empty());
+        assert!(svc.controller.session().is_adopted());
+        assert_eq!(svc.controller.display_text(), "tiến");
+        // Sửa tiếp dấu trên "tiến" + 'f' -> "tiền" vẫn hoạt động trơn tru nhờ surrounding tự đồng bộ
+        assert!(svc.process_key_event(b'f' as u32, 33, 0));
         assert_eq!(
             svc.drain_signals(),
-            vec![IbusSignal::DeleteSurroundingText { offset_chars: -1, nchars: 1 }]
+            vec![
+                IbusSignal::DeleteSurroundingText { offset_chars: -2, nchars: 2 },
+                IbusSignal::CommitText { text: "ền".into() },
+            ]
         );
+        // Nhấn giữ Backspace xoá tiếp "tiền" -> mọi nhịp đều PassThrough (handled=false, không phát signal thừa)
+        for _ in 0..5 {
+            assert!(!svc.process_key_event(0xff08, 14, 0));
+            assert!(svc.drain_signals().is_empty());
+        }
 
         // Chuyển sang ô mật khẩu -> pass phím qua
         svc.set_content_type(8, 0);
@@ -631,6 +714,57 @@ mod tests {
             svc.drain_signals(),
             vec![IbusSignal::CommitText { text: "t".into() }, IbusSignal::HidePreeditText]
         );
+
+        // Alt+, và Alt+Z khi đang có preedit phải flush preedit trước khi trả về false
+        assert!(svc.process_key_event(b'b' as u32, 48, 0));
+        assert!(svc.process_key_event(b'a' as u32, 30, 0));
+        let _ = svc.drain_signals();
+        assert!(!svc.process_key_event(b'z' as u32, 44, crate::keymap::IBUS_MOD1_MASK));
+        assert_eq!(
+            svc.drain_signals(),
+            vec![IbusSignal::CommitText { text: "ba".into() }, IbusSignal::HidePreeditText]
+        );
+
+        // Numpad (KP_5 = 0xffb5) khi đang có preedit phải commit từ kèm số đúng thứ tự
+        assert!(svc.process_key_event(b't' as u32, 20, 0));
+        let _ = svc.drain_signals();
+        assert!(svc.process_key_event(0xffb5, 76, 0));
+        assert_eq!(
+            svc.drain_signals(),
+            vec![IbusSignal::CommitText { text: "t5".into() }, IbusSignal::HidePreeditText]
+        );
+
+        // SetCapabilities không hỗ trợ surrounding -> bỏ qua SetSurroundingText; Disable -> flush preedit
+        svc.set_capabilities(1);
+        assert!(!svc.supports_surrounding());
+        svc.set_surrounding_text("tiêng", 5, 5);
+        assert!(svc.process_key_event(b's' as u32, 31, 0));
+        assert_eq!(
+            svc.drain_signals(),
+            vec![IbusSignal::UpdatePreeditText { text: "s".into(), cursor_utf16: 1, visible: true }]
+        );
+        svc.disable();
+        assert_eq!(
+            svc.drain_signals(),
+            vec![IbusSignal::CommitText { text: "s".into() }, IbusSignal::HidePreeditText]
+        );
+
+        // FocusOut khi đang có preedit (mode IBUS_ENGINE_PREEDIT_COMMIT) chỉ reset nội bộ, không phát CommitText trùng
+        assert!(svc.process_key_event(b'a' as u32, 30, 0));
+        let _ = svc.drain_signals();
+        svc.focus_out();
+        assert!(svc.drain_signals().is_empty());
+
+        // SetCapabilities không hỗ trợ preedit (chỉ hỗ trợ surrounding) -> chuyển sang chế độ Replace
+        svc.set_capabilities(1 << 5);
+        assert!(!svc.supports_preedit());
+        assert!(svc.supports_surrounding());
+
+        // SetCapabilities thiếu cả preedit lẫn surrounding (vd: chỉ có IBUS_CAP_FOCUS = 1 << 3)
+        // -> giữ OutputMode::Preedit để ibus-daemon hiển thị cửa sổ preedit nổi
+        svc.set_capabilities(1 << 3);
+        assert!(svc.supports_preedit());
+        assert!(!svc.supports_surrounding());
 
         svc.property_activate("vntype.im.vni", 1);
         svc.property_activate("vntype.charset.tcvn3", 1);
@@ -694,10 +828,21 @@ mod tests {
         assert!(saved_cfg.macros.is_empty());
 
         // Mô phỏng cập nhật macros.txt (lùi mtime trước rồi ghi mới để tránh trùng timestamp trên FS nhanh)
+        let _ = svc.drain_signals();
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&macros_path, "dc=được\n").unwrap();
         svc.macros_mtime = None;
         svc.reload_config_if_needed(true);
+        assert!(!svc.drain_signals().iter().any(|s| matches!(s, IbusSignal::RegisterMenu { .. })));
+
+        // Mô phỏng vntype-linux-settings ghi mới config.json -> phải phát RegisterMenu để đồng bộ Top Bar
+        let mut ext_cfg = saved_cfg;
+        ext_cfg.input_method = "vni".into();
+        save_config_atomic(&cfg_path, &ext_cfg).unwrap();
+        svc.config_mtime = None;
+        svc.reload_config_if_needed(true);
+        assert_eq!(svc.input_method(), "vni");
+        assert!(svc.drain_signals().iter().any(|s| matches!(s, IbusSignal::RegisterMenu { .. })));
         assert_eq!(svc.current_config().macros.get("dc").map(String::as_str), Some("được"));
         assert!(!svc.current_config().macros.contains_key("ko"));
 

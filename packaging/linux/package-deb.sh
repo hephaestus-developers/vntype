@@ -109,7 +109,7 @@ install -Dm644 \
     "$ROOT_DIR/docs/assets/logo.svg" \
     "$IBUS_ROOT/usr/share/icons/hicolor/scalable/apps/vntype.svg"
 mkdir -p "$IBUS_ROOT/usr/share/ibus/component"
-sed 's|@LIBEXECDIR@|/usr/libexec|g' \
+sed -e 's|@LIBEXECDIR@|/usr/libexec|g' -e 's|@BINDIR@|/usr/bin|g' -e "s|@VERSION@|$VERSION|g" \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \
     > "$IBUS_ROOT/usr/share/ibus/component/vntype.xml"
 build_deb "vntype-ibus" "ibus, libgtk-3-0 | libgtk-3-0t64" "VNType IBus input method engine"

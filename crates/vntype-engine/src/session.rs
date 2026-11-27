@@ -405,6 +405,16 @@ impl ImeSession {
         )
     }
 
+    /// Kiểm tra nhanh xem phiên gõ hiện có chuỗi đang hiển thị/theo dõi hay không (không cấp phát).
+    pub fn has_display(&self) -> bool {
+        !self.word.is_empty()
+    }
+
+    fn is_nfc_unicode(&self) -> bool {
+        let charset = self.profile.charset.as_deref().unwrap_or(&self.config.charset);
+        vntype_core::normalize_charset(charset) == "unicode" && self.config.unicode_form == UnicodeForm::Nfc
+    }
+
     /// Xoá sạch trạng thái của từ đang gõ mà không phát sinh [`Action`].
     pub fn reset(&mut self) {
         self.raw.clear();
@@ -625,12 +635,19 @@ impl ImeSession {
     }
 
     fn show(&mut self, new: String, typed: Option<char>) -> Action {
+        self.show_inner(new, typed, false)
+    }
+
+    fn show_inner(&mut self, new: String, typed: Option<char>, is_backspace: bool) -> Action {
         let old_out = self.display();
         self.word = new;
         let new_out = self.display();
         if self.mode == OutputMode::Preedit {
             if self.adopted.is_some() {
                 let e = diff(&old_out, &new_out);
+                if is_backspace && e.delete_before == 1 && e.insert.is_empty() && self.is_nfc_unicode() {
+                    return Action::PassThrough;
+                }
                 return Action::Replace {
                     delete_before: e.delete_before,
                     insert: e.insert,
@@ -655,7 +672,7 @@ impl ImeSession {
         if was_adopted {
             self.adopted = Some((text.clone(), self.raw.len()));
         }
-        self.show(text, None)
+        self.show_inner(text, None, true)
     }
 
     fn letter(&mut self, key: char) -> Action {
@@ -760,7 +777,7 @@ impl ImeSession {
         t.pop();
         let target: String = t.iter().collect();
         if target.is_empty() {
-            let act = self.show(String::new(), None);
+            let act = self.show_inner(String::new(), None, true);
             self.reset();
             return act;
         }

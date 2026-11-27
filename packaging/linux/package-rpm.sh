@@ -23,6 +23,7 @@ echo "Building VNType $VERSION ($ARCH) release binaries..."
 cargo build "${CARGO_FLAGS[@]}" \
     -p vntype-cli \
     -p vntype-ibus \
+    -p vntype-linux-settings \
     -p vntype-ffi \
     --manifest-path "$ROOT_DIR/Cargo.toml"
 
@@ -41,8 +42,11 @@ cmake --build "$FCITX_BUILD" -j"$(nproc)"
 STAGE="$TOPDIR/SOURCES/stage"
 install -Dm755 "$ROOT_DIR/target/release/vntype-cli" "$STAGE/usr/bin/vntype-cli"
 install -Dm755 "$ROOT_DIR/target/release/vntype-ibus" "$STAGE/usr/libexec/vntype-ibus"
+install -Dm755 "$ROOT_DIR/target/release/vntype-linux-settings" "$STAGE/usr/bin/vntype-linux-settings"
+install -Dm644 "$ROOT_DIR/platforms/linux/settings/data/dev.hephaestus.vntype.settings.desktop" "$STAGE/usr/share/applications/dev.hephaestus.vntype.settings.desktop"
+install -Dm644 "$ROOT_DIR/docs/assets/logo.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/vntype.svg"
 mkdir -p "$STAGE/usr/share/ibus/component"
-sed 's|@LIBEXECDIR@|/usr/libexec|g' \
+sed -e 's|@LIBEXECDIR@|/usr/libexec|g' -e 's|@BINDIR@|/usr/bin|g' -e "s|@VERSION@|$VERSION|g" \
     "$ROOT_DIR/platforms/linux/ibus/data/vntype.xml.in" \
     > "$STAGE/usr/share/ibus/component/vntype.xml"
 DESTDIR="$STAGE" cmake --install "$FCITX_BUILD"
@@ -87,6 +91,9 @@ cp -a "$STAGE"/* %{buildroot}/
 
 %files -n vntype-ibus
 %{_libexecdir}/vntype-ibus
+%{_bindir}/vntype-linux-settings
+%{_datadir}/applications/dev.hephaestus.vntype.settings.desktop
+%{_datadir}/icons/hicolor/scalable/apps/vntype.svg
 %{_datadir}/ibus/component/vntype.xml
 
 %files -n vntype-fcitx5

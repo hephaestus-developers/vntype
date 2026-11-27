@@ -20,6 +20,8 @@ pub const IBUS_SUPER_MASK: u32 = 1 << 26;
 pub const IBUS_HYPER_MASK: u32 = 1 << 27;
 /// Mặt nạ phím Meta (`IBUS_META_MASK`).
 pub const IBUS_META_MASK: u32 = 1 << 28;
+/// Mặt nạ đánh dấu sự kiện phím đã được xử lý (`IBUS_HANDLED_MASK`).
+pub const IBUS_HANDLED_MASK: u32 = 1 << 24;
 /// Mặt nạ đánh dấu sự kiện phím đã được engine chuyển tiếp (`IBUS_IGNORED_MASK`).
 pub const IBUS_IGNORED_MASK: u32 = 1 << 25;
 /// Tập mặt nạ các phím bổ trợ hệ thống (`Ctrl`, `Alt`, `AltGr`, `Super`, `Hyper`, `Meta`).
@@ -36,7 +38,7 @@ pub const IBUS_SYSTEM_MODIFIER_MASK: u32 = IBUS_CONTROL_MASK
 /// Trả về `None` nếu là sự kiện nhả phím (`RELEASE_MASK`), phím bị bỏ qua (`IBUS_IGNORED_MASK`)
 /// hoặc mã phím không ánh xạ được.
 pub fn translate_ibus_key(keyval: u32, state: u32) -> Option<KeyEvent> {
-    if (state & (IBUS_RELEASE_MASK | IBUS_IGNORED_MASK)) != 0 {
+    if (state & (IBUS_RELEASE_MASK | IBUS_HANDLED_MASK | IBUS_IGNORED_MASK)) != 0 {
         return None;
     }
     let ctrl = (state & IBUS_CONTROL_MASK) != 0;
@@ -46,17 +48,25 @@ pub fn translate_ibus_key(keyval: u32, state: u32) -> Option<KeyEvent> {
     let key = match keyval {
         0xff08 => Key::Backspace,
         0xff0d | 0xff8d => Key::Enter,
-        0xff09 => Key::Tab,
+        0xff09 | 0xff89 => Key::Tab,
         0xff1b => Key::Escape,
-        0xff51 => Key::Left,
-        0xff52 => Key::Up,
-        0xff53 => Key::Right,
-        0xff54 => Key::Down,
-        0xff50 => Key::Home,
-        0xff57 => Key::End,
-        0xffff => Key::Delete,
-        0xff55 => Key::PageUp,
-        0xff56 => Key::PageDown,
+        0xff51 | 0xff96 => Key::Left,
+        0xff52 | 0xff97 => Key::Up,
+        0xff53 | 0xff98 => Key::Right,
+        0xff54 | 0xff99 => Key::Down,
+        0xff50 | 0xff95 => Key::Home,
+        0xff57 | 0xff9c => Key::End,
+        0xffff | 0xff9f => Key::Delete,
+        0xff55 | 0xff9a => Key::PageUp,
+        0xff56 | 0xff9b => Key::PageDown,
+        0xff80 => Key::Char(' '),
+        0xffaa => Key::Char('*'),
+        0xffab => Key::Char('+'),
+        0xffac => Key::Char(','),
+        0xffad => Key::Char('-'),
+        0xffae => Key::Char('.'),
+        0xffaf => Key::Char('/'),
+        0xffb0..=0xffb9 => Key::Char(char::from_u32(b'0' as u32 + (keyval - 0xffb0))?),
         0xffe1..=0xffee => Key::Modifier,
         0x0020..=0x007e => Key::Char(char::from_u32(keyval)?),
         0x0100_0000..=0x0110_ffff => {
@@ -89,6 +99,7 @@ mod tests {
         assert_eq!(translate_ibus_key(0xff08, 0), Some(KeyEvent::new(Key::Backspace)));
         assert_eq!(translate_ibus_key(0x0100_0111, 0), Some(KeyEvent::ch('đ')));
         assert_eq!(translate_ibus_key(b'a' as u32, IBUS_RELEASE_MASK), None);
+        assert_eq!(translate_ibus_key(b'a' as u32, IBUS_HANDLED_MASK), None);
         assert_eq!(translate_ibus_key(b'a' as u32, IBUS_IGNORED_MASK), None);
         assert_eq!(
             translate_ibus_key(b'l' as u32, IBUS_MOD4_MASK),
@@ -98,5 +109,9 @@ mod tests {
             translate_ibus_key(b'e' as u32, IBUS_MOD5_MASK),
             Some(KeyEvent { key: Key::Char('e'), ctrl: false, alt: true, meta: false })
         );
+        assert_eq!(translate_ibus_key(0xffb5, 0), Some(KeyEvent::ch('5')));
+        assert_eq!(translate_ibus_key(0xffab, 0), Some(KeyEvent::ch('+')));
+        assert_eq!(translate_ibus_key(0xff96, 0), Some(KeyEvent::new(Key::Left)));
+        assert_eq!(translate_ibus_key(0xff9f, 0), Some(KeyEvent::new(Key::Delete)));
     }
 }

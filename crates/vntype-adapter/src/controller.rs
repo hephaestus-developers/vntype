@@ -215,6 +215,11 @@ impl AdapterController {
         self.session.display()
     }
 
+    /// Kiểm tra nhanh phiên gõ có chuỗi đang hiển thị/theo dõi hay không (không cấp phát `String`).
+    pub fn has_display_text(&self) -> bool {
+        self.session.has_display()
+    }
+
     /// Kiểm tra bộ gõ tiếng Việt có đang bật hay không.
     pub fn is_enabled(&self) -> bool {
         self.session.is_enabled()
@@ -319,15 +324,24 @@ impl AdapterController {
             }
         }
 
-        let display = self.session.display();
-        let before = if !display.is_empty() {
-            display
-        } else {
-            self.shared.0.borrow().surrounding_before.clone().unwrap_or_default()
-        };
+        let before_had_display = self.session.has_display();
+        let display = if before_had_display { self.session.display() } else { String::new() };
         let was_adopted = self.session.is_adopted();
         let act = self.session.process_key(event);
+        let before = if before_had_display {
+            display
+        } else if matches!(act, Action::Replace { .. }) {
+            self.shared.0.borrow().surrounding_before.clone().unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let is_plain_backspace =
+            event.key == vntype_engine::Key::Backspace && !event.ctrl && !event.alt && !event.meta;
+        let is_pass = matches!(act, Action::PassThrough);
         let effects = self.translate_action(act, &before, was_adopted, Some(raw_keycode));
+        if is_pass && is_plain_backspace {
+            self.update_surrounding_after_delete(1);
+        }
         if matches!(event.key, vntype_engine::Key::Enter | vntype_engine::Key::Tab) || event.key.is_nav() {
             self.set_surrounding_utf16(None, 0, 0);
         }

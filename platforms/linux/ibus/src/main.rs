@@ -42,7 +42,12 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "--xml") {
-        print!("{}", include_str!("../data/vntype.xml.in"));
+        print!(
+            "{}",
+            include_str!("../data/vntype.xml.in")
+                .replace("@VERSION@", env!("CARGO_PKG_VERSION"))
+                .replace("@BINDIR@", "/usr/bin")
+        );
         return;
     }
     if args.iter().any(|a| a == "--self-test") {
