@@ -6,6 +6,24 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 
 ## [Unreleased]
 
+## [2026.11.5] - 2026-11-28
+
+### Fixed
+
+- **Linux (`vntype-ibus`, `packaging`)**:
+  - Ánh xạ đầy đủ các phím Numpad (`KP_0..=KP_9`, toán tử, `KP_Space`, `KP_Tab`, điều hướng/xóa) trong `keymap.rs` và lọc thêm cờ `IBUS_HANDLED_MASK`.
+  - Flush preedit đang mở khi nhấn `Alt+,` hoặc `Alt+Z`, đồng thời đặt lại cờ phụ trợ trong `set_content_type`, `disable`, và khi nhấn `Backspace` kèm modifier hệ thống.
+  - Chuyển `UpdatePreeditText` sang chế độ `IBUS_ENGINE_PREEDIT_COMMIT`, xóa sạch bộ đệm preedit trên `ibus-daemon` khi `HidePreeditText`, và chỉ reset nội bộ trong `FocusOut` khi `preedit_visible == true` để tránh mất hoặc nhân đôi chữ.
+  - Xử lý đầy đủ `Disable`, `Destroy` (dừng actor thread và gỡ object D-Bus), `SetCapabilities` (`IBUS_CAP_PREEDIT_TEXT` và `IBUS_CAP_SURROUNDING_TEXT`), và tự thoát tiến trình khi mất kết nối `ibus-daemon`.
+  - Đồng bộ lại menu IBus trên Top Bar khi `config.json` thay đổi từ bên ngoài.
+  - Bổ sung `<setup>` và `@VERSION@` vào `vntype.xml.in`, đồng thời đóng gói đầy đủ `vntype-linux-settings`, `.desktop` và biểu tượng trong `package-rpm.sh` và `install-source.sh`.
+
+### Changed
+
+- **Hiệu năng & Độ trễ (`vntype-engine`, `vntype-adapter`, `vntype-ibus`)**:
+  - Áp dụng **Pass-Through Backspace** cho từ đã `adopted` ở chế độ `Preedit` (cập nhật ngầm trạng thái và đồng bộ `surrounding_before` trong `AdapterController` để giữ `Backspace` liên tục mượt như gõ gốc).
+  - Thêm fast-path trả sớm ở cửa ngõ D-Bus `process_key_event`, tái sử dụng cặp kênh `ActorHandle`, và bổ sung `has_display()` / `has_display_text()` để loại bỏ cấp phát `String` thừa trên hot-path.
+
 ## [2026.11.4] - 2026-11-26
 
 ### Fixed
@@ -80,7 +98,8 @@ Tất cả thay đổi đáng chú ý của **VNType** được ghi lại tại 
 - Chuyển giao diện cài đặt Windows từ `eframe` sang Win32 API thuần siêu nhẹ.
 - Áp dụng quy tắc phiên bản `{year}.{month}.{number}` bắt đầu từ `2026.11.0`.
 
-[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.4...HEAD
+[unreleased]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.5...HEAD
+[2026.11.5]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.4...v2026.11.5
 [2026.11.4]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.3...v2026.11.4
 [2026.11.3]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.2...v2026.11.3
 [2026.11.2]: https://github.com/hephaestus-developers/vntype/compare/v2026.11.1...v2026.11.2
